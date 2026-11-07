@@ -18,6 +18,10 @@ export type PlayerData = {
 	Manager: boolean,
 	LastOnline: number,
 	TotalFloorsBuilt: number,
+	BestFloors: number, -- рекорд высоты за всё время
+	LastDailyDay: number, -- номер дня (os.time() // 86400), когда забрал награду
+	DailyStreak: number,
+	RedeemedCodes: { string },
 }
 
 type Profile = {
@@ -53,6 +57,10 @@ local function defaultData(): PlayerData
 		Manager = false,
 		LastOnline = os.time(),
 		TotalFloorsBuilt = 0,
+		BestFloors = 0,
+		LastDailyDay = 0,
+		DailyStreak = 0,
+		RedeemedCodes = {},
 	}
 end
 

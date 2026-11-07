@@ -19,6 +19,7 @@ export type Plot = {
 	Model: Model,
 	Tower: Model,
 	Pad: BasePart,
+	Lift: BasePart,
 	Roof: BasePart,
 	SignLabel: TextLabel,
 	RoofLabel: TextLabel,
@@ -128,6 +129,17 @@ local function createPlot(index: number, origin: CFrame): Plot
 	})
 	makeSurfaceText(pad, Enum.NormalId.Top, "💰 СОБРАТЬ", Color3.fromRGB(20, 60, 20))
 
+	-- синяя площадка-лифт: переносит на крышу
+	local lift = makePart({
+		Name = "LiftPad",
+		Size = Vector3.new(7, 0.4, 7),
+		CFrame = origin * CFrame.new(-13, 0.2, 11),
+		Material = Enum.Material.Neon,
+		Color = Color3.fromRGB(70, 140, 255),
+		Parent = model,
+	})
+	makeSurfaceText(lift, Enum.NormalId.Top, "🛗 НА КРЫШУ", Color3.fromRGB(15, 30, 70))
+
 	-- табличка с именем владельца
 	local sign = makePart({
 		Name = "Sign",
@@ -205,6 +217,7 @@ local function createPlot(index: number, origin: CFrame): Plot
 		Model = model,
 		Tower = tower,
 		Pad = pad,
+		Lift = lift,
 		Roof = roof,
 		SignLabel = signLabel,
 		RoofLabel = roofLabel,

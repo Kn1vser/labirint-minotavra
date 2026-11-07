@@ -148,6 +148,28 @@ Config.OFFLINE_MAX_SECONDS = 8 * 60 * 60
 -- 0 = выключено.
 Config.GAMEPASS_DOUBLE_INCOME = 0
 
+-- Ежедневная награда: день серии -> сколько минут дохода получишь (минимум MIN_CASH * день)
+Config.DAILY_REWARD_MINUTES = { 2, 4, 6, 8, 10, 15, 30 }
+Config.DAILY_REWARD_MIN_CASH = 100
+
+-- Коды. Ключ пиши БОЛЬШИМИ буквами. Cash = деньги, IncomeMinutes = минуты текущего дохода.
+Config.Codes = {
+	NEBO = { Cash = 500 },
+	VETER = { IncomeMinutes = 10 },
+	ZOLOTO = { Cash = 2500, IncomeMinutes = 5 },
+}
+
+-- Золотой час: раз в GOLDEN_MIN..GOLDEN_MAX секунд весь сервер получает x2 доход
+Config.GOLDEN_MIN = 20 * 60
+Config.GOLDEN_MAX = 30 * 60
+Config.GOLDEN_DURATION = 3 * 60
+Config.GOLDEN_MULTIPLIER = 2
+
+-- Глобальная таблица рекордов высоты
+Config.LEADERBOARD_NAME = "SkyscraperTycoon_BestFloors_v1"
+Config.LEADERBOARD_SIZE = 10
+Config.LEADERBOARD_REFRESH = 120
+
 -- Сохранения
 Config.DATASTORE_NAME = "SkyscraperTycoon_v1"
 Config.AUTOSAVE_INTERVAL = 60
@@ -179,6 +201,12 @@ end
 
 function Config.HeightBonus(floorCount: number): number
 	return 1 + math.floor(floorCount / Config.HEIGHT_BONUS_EVERY) * Config.HEIGHT_BONUS_STEP
+end
+
+function Config.DailyReward(streakDay: number, income: number): number
+	local index = math.clamp(streakDay, 1, #Config.DAILY_REWARD_MINUTES)
+	local fromIncome = income * 60 * Config.DAILY_REWARD_MINUTES[index]
+	return math.floor(math.max(fromIncome, Config.DAILY_REWARD_MIN_CASH * streakDay))
 end
 
 function Config.RebirthRequirement(rebirths: number): number

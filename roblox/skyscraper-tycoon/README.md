@@ -55,6 +55,11 @@
 - 📱 Интерфейс подходит для телефона.
 - 🌪️ Предупреждение о шторме и тряска камеры.
 - 🔒 Сервер проверяет все действия, читерить через клиент не выйдет.
+- 🎁 Ежедневная награда: серия из 7 дней, награда растёт (от 2 до 30 минут дохода).
+- 🎟️ Коды: `NEBO`, `VETER`, `ZOLOTO`. Свои коды добавляются в `Config.Codes`.
+- ✨ Золотой час: раз в 20–30 минут весь сервер получает x2 доход на 3 минуты.
+- 🛗 Лифт: синяя площадка на участке поднимает на крышу любой башни.
+- 🏆 Табло рекордов в центре карты: самые высокие башни со всех серверов.
 
 Все цифры баланса лежат в `src/shared/Config.luau`.
 
@@ -74,7 +79,8 @@ ReplicatedStorage
 ServerScriptService
 ├── Main                (Script)        ← src/server/Main.server.luau
 ├── DataService         (ModuleScript)  ← src/server/DataService.luau
-└── TowerBuilder        (ModuleScript)  ← src/server/TowerBuilder.luau
+├── TowerBuilder        (ModuleScript)  ← src/server/TowerBuilder.luau
+└── Leaderboard         (ModuleScript)  ← src/server/Leaderboard.luau
 
 StarterPlayer
 └── StarterPlayerScripts
@@ -108,9 +114,6 @@ rojo serve
 
 ## Идеи на будущее
 
-- Ежедневная награда и коды.
-- Глобальный рейтинг высоты (OrderedDataStore).
-- Лифт на крышу башни.
-- Ивенты: «Золотой час» (x2 доход), землетрясение.
+- Ивент «Землетрясение».
 - Скины для башен за реконструкции.
 - Питомцы-рабочие, ускоряющие стройку.

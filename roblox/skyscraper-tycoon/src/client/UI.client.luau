@@ -22,6 +22,8 @@ local Rebirth = Remotes:WaitForChild("Rebirth") :: RemoteEvent
 local RequestState = Remotes:WaitForChild("RequestState") :: RemoteEvent
 local StateUpdate = Remotes:WaitForChild("StateUpdate") :: RemoteEvent
 local Notify = Remotes:WaitForChild("Notify") :: RemoteEvent
+local ClaimDaily = Remotes:WaitForChild("ClaimDaily") :: RemoteEvent
+local RedeemCode = Remotes:WaitForChild("RedeemCode") :: RemoteEvent
 
 ---------------------------------------------------------------------
 -- Цвета и помощники
@@ -201,33 +203,51 @@ local collectButton = button({
 local sideMenu = create("Frame", {
 	AnchorPoint = Vector2.new(1, 0.5),
 	Position = UDim2.new(1, -10, 0.4, 0),
-	Size = UDim2.new(0.17, 0, 0.42, 0),
+	Size = UDim2.new(0.17, 0, 0.58, 0),
 	BackgroundTransparency = 1,
 	Parent = gui,
 }, {
 	create("UIListLayout", {
-		Padding = UDim.new(0, 6),
+		Padding = UDim.new(0, 5),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 	}),
-	create("UISizeConstraint", { MinSize = Vector2.new(130, 150), MaxSize = Vector2.new(240, 320) }),
+	create("UISizeConstraint", { MinSize = Vector2.new(130, 200), MaxSize = Vector2.new(240, 440) }),
 })
 
 local function sideButton(text: string, color: Color3, order: number): TextButton
 	return button({
-		Size = UDim2.fromScale(1, 0.23),
+		Size = UDim2.fromScale(1, 0.15),
 		Text = text,
 		LayoutOrder = order,
 		Parent = sideMenu,
 	}, color)
 end
 
+local dailyButton = sideButton("🎁 Награда", COLORS.Gold, 0)
+dailyButton.TextColor3 = Color3.fromRGB(60, 40, 0)
+dailyButton.Visible = false
 local upgradesButton = sideButton("⬆️ Улучшения", COLORS.Blue, 1)
 local repairButton = sideButton("🔧 Ремонт", COLORS.Red, 2)
 local rebirthButton = sideButton("♻️ Реконструкция", COLORS.Purple, 3)
 local passButton = sideButton("⚡ x2 Доход", COLORS.Orange, 4)
 repairButton.Visible = false
 passButton.Visible = Config.GAMEPASS_DOUBLE_INCOME ~= 0
+local codesButton = sideButton("🎟️ Коды", COLORS.PanelLight, 5)
+
+-- Плашка «Золотой час» под деньгами
+local goldenLabel = label({
+	Position = UDim2.new(0, 0, 1, 10),
+	Size = UDim2.new(1, 0, 0.45, 0),
+	BackgroundTransparency = 0.1,
+	BackgroundColor3 = Color3.fromRGB(90, 70, 10),
+	TextColor3 = COLORS.Gold,
+	Text = "",
+	Visible = false,
+	Parent = statsPanel,
+})
+corner(10).Parent = goldenLabel
+stroke(COLORS.Gold, 2).Parent = goldenLabel
 
 -- Низ: постройка
 local buildPanel = create("Frame", {
@@ -523,6 +543,22 @@ local function refresh()
 
 	passButton.Visible = Config.GAMEPASS_DOUBLE_INCOME ~= 0 and not state.DoubleIncome
 
+	-- ежедневная награда
+	dailyButton.Visible = state.DailyAvailable
+	dailyButton.Text = `🎁 Награда\nдень {state.DailyStreak}`
+
+	-- золотой час
+	goldenLabel.Visible = state.GoldenLeft > 0
+	if state.GoldenLeft > 0 then
+		local left = state.GoldenLeft
+		goldenLabel.Text = `✨ Золотой час x2 — {left // 60}:{string.format("%02d", left % 60)}`
+	end
+
+	-- уведомления всегда сразу под верхней панелью (и под плашкой золотого часа)
+	local bottom = if goldenLabel.Visible then goldenLabel else statsPanel
+	local y = bottom.AbsolutePosition.Y - gui.AbsolutePosition.Y + bottom.AbsoluteSize.Y + 8
+	toastList.Position = UDim2.new(0.5, 0, 0, y)
+
 	-- улучшения
 	for name, row in upgradeRows do
 		local upgrade = Config.Upgrades[name]
@@ -584,6 +620,7 @@ local TOAST_COLORS = {
 	money = COLORS.Gold,
 	wind = COLORS.Orange,
 	wind_warning = COLORS.Orange,
+	golden = COLORS.Gold,
 }
 
 local toastCounter = 0
@@ -659,7 +696,7 @@ end
 
 Notify.OnClientEvent:Connect(function(text, kind)
 	showToast(text, kind)
-	if kind == "money" then
+	if kind == "money" or kind == "golden" then
 		playSound(SOUND_MONEY, 0.5)
 	elseif kind == "wind" then
 		shakeCamera(1.5, 1.2)
@@ -757,6 +794,70 @@ passButton.Activated:Connect(function()
 	if Config.GAMEPASS_DOUBLE_INCOME ~= 0 then
 		MarketplaceService:PromptGamePassPurchase(player, Config.GAMEPASS_DOUBLE_INCOME)
 	end
+end)
+
+dailyButton.Activated:Connect(function()
+	pop(dailyButton)
+	ClaimDaily:FireServer()
+end)
+
+-- Окно кодов
+local codesFrame, codesBody = modal("🎟️ Коды")
+local codeBox = create("TextBox", {
+	Size = UDim2.fromScale(1, 0.35),
+	BackgroundColor3 = COLORS.PanelLight,
+	Font = Enum.Font.GothamBold,
+	TextColor3 = COLORS.Text,
+	PlaceholderText = "Введи код...",
+	PlaceholderColor3 = COLORS.Muted,
+	TextScaled = true,
+	ClearTextOnFocus = false,
+	Text = "",
+	ZIndex = 12,
+	Parent = codesBody,
+}, { corner(10), padding(6) })
+local codeHint = label({
+	Position = UDim2.fromScale(0, 0.38),
+	Size = UDim2.fromScale(1, 0.2),
+	Font = Enum.Font.Gotham,
+	TextColor3 = COLORS.Muted,
+	Text = "Коды выходят в сообществе игры",
+	ZIndex = 12,
+	Parent = codesBody,
+})
+local redeemButton = button({
+	Position = UDim2.fromScale(0, 0.64),
+	Size = UDim2.fromScale(1, 0.34),
+	Text = "Активировать",
+	ZIndex = 12,
+	Parent = codesBody,
+}, COLORS.Green)
+
+local function submitCode()
+	if codeBox.Text ~= "" then
+		RedeemCode:FireServer(codeBox.Text)
+		codeBox.Text = ""
+	end
+end
+redeemButton.Activated:Connect(function()
+	pop(redeemButton)
+	submitCode()
+end)
+codeBox.FocusLost:Connect(function(enterPressed)
+	if enterPressed then
+		submitCode()
+	end
+end)
+
+codesButton.Activated:Connect(function()
+	pop(codesButton)
+	upgradesFrame.Visible = false
+	confirmFrame.Visible = false
+	codesFrame.Visible = not codesFrame.Visible
+end)
+-- окна не должны открываться одновременно
+upgradesButton.Activated:Connect(function()
+	codesFrame.Visible = false
 end)
 
 RequestState:FireServer()

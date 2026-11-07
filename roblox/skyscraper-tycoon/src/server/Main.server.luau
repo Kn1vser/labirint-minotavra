@@ -11,6 +11,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local Format = require(Shared:WaitForChild("Format"))
 local DataService = require(script.Parent:WaitForChild("DataService"))
 local TowerBuilder = require(script.Parent:WaitForChild("TowerBuilder"))
+local Leaderboard = require(script.Parent:WaitForChild("Leaderboard"))
 
 ---------------------------------------------------------------------
 -- Remotes: каналы связи между клиентом и сервером
@@ -37,6 +38,8 @@ local Rebirth = newRemote("Rebirth")
 local RequestState = newRemote("RequestState")
 local StateUpdate = newRemote("StateUpdate")
 local Notify = newRemote("Notify")
+local ClaimDaily = newRemote("ClaimDaily")
+local RedeemCode = newRemote("RedeemCode")
 remotesFolder.Parent = ReplicatedStorage
 
 ---------------------------------------------------------------------
@@ -52,6 +55,18 @@ type Session = {
 }
 
 local sessions: { [Player]: Session } = {}
+
+-- Золотой час: до этого времени (os.time) у всех x2 доход
+local goldenEndsAt = 0
+
+local function goldenMultiplier(): number
+	return if os.time() < goldenEndsAt then Config.GOLDEN_MULTIPLIER else 1
+end
+
+-- Номер текущего дня (меняется в 03:00 по Москве, 00:00 UTC)
+local function today(): number
+	return os.time() // 86400
+end
 
 local function notify(player: Player, text: string, kind: string?)
 	Notify:FireClient(player, text, kind or "info")
@@ -70,6 +85,7 @@ local function getMultiplier(session: Session, data: DataService.PlayerData): nu
 		* (1 + data.Rebirths * Config.REBIRTH_BONUS)
 		* (1 + data.Ads * Config.ADS_BONUS)
 		* (if session.DoubleIncome then 2 else 1)
+		* goldenMultiplier()
 end
 
 local function getIncome(session: Session, data: DataService.PlayerData): number
@@ -95,6 +111,18 @@ local function getRepairCost(data: DataService.PlayerData): number
 		end
 	end
 	return math.floor(total)
+end
+
+local function dailyAvailable(data: DataService.PlayerData): boolean
+	return data.LastDailyDay < today()
+end
+
+-- Какой день серии будет, если забрать награду сейчас
+local function nextStreak(data: DataService.PlayerData): number
+	if data.LastDailyDay == today() - 1 then
+		return data.DailyStreak + 1
+	end
+	return 1
 end
 
 local function upgradeLevel(data: DataService.PlayerData, name: string): number
@@ -141,6 +169,9 @@ local function sendState(player: Player)
 		FloorCosts = floorCosts,
 		Upgrades = upgrades,
 		DoubleIncome = session.DoubleIncome,
+		DailyAvailable = dailyAvailable(data),
+		DailyStreak = if dailyAvailable(data) then nextStreak(data) else data.DailyStreak,
+		GoldenLeft = math.max(0, goldenEndsAt - os.time()),
 	})
 end
 
@@ -186,6 +217,21 @@ local function sanitize(data: DataService.PlayerData)
 		end
 	end
 	data.Damaged = damaged
+
+	data.BestFloors = math.max(if isGoodNumber(data.BestFloors) then data.BestFloors else 0, #floors)
+	if not isGoodNumber(data.LastDailyDay) then
+		data.LastDailyDay = 0
+	end
+	if not isGoodNumber(data.DailyStreak) then
+		data.DailyStreak = 0
+	end
+	local codes = {}
+	for _, code in data.RedeemedCodes do
+		if type(code) == "string" then
+			table.insert(codes, code)
+		end
+	end
+	data.RedeemedCodes = codes
 end
 
 ---------------------------------------------------------------------
@@ -281,10 +327,17 @@ local function onPlayerAdded(player: Player)
 		elseif #data.Floors == 0 then
 			notify(player, "👷 Построй первый этаж кнопкой внизу!", "info")
 		end
+		if dailyAvailable(data) then
+			notify(player, "🎁 Ежедневная награда ждёт! Кнопка справа", "good")
+		end
 	end)
 end
 
 local function onPlayerRemoving(player: Player)
+	local data = DataService.Get(player)
+	if data then
+		task.spawn(Leaderboard.Submit, player.UserId, data.BestFloors)
+	end
 	sessions[player] = nil
 	TowerBuilder.ReleasePlot(player)
 	DataService.Release(player)
@@ -355,6 +408,9 @@ BuildFloor.OnServerEvent:Connect(function(player, typeId)
 
 	local newCount = #data.Floors
 	session.FloorsStat.Value = newCount
+	if newCount > data.BestFloors then
+		data.BestFloors = newCount
+	end
 
 	if newCount % Config.HEIGHT_BONUS_EVERY == 0 then
 		local bonus = string.format("%.1f", Config.HeightBonus(newCount))
@@ -479,6 +535,52 @@ Rebirth.OnServerEvent:Connect(function(player)
 	task.spawn(DataService.Save, player)
 end)
 
+ClaimDaily.OnServerEvent:Connect(function(player)
+	local session = sessions[player]
+	local data = DataService.Get(player)
+	if not session or not data or not canAct(session) then
+		return
+	end
+	if not dailyAvailable(data) then
+		notify(player, "🎁 Награду уже забрал, приходи завтра!", "bad")
+		return
+	end
+	local streak = nextStreak(data)
+	local reward = Config.DailyReward(streak, getIncome(session, data))
+	data.Cash += reward
+	data.LastDailyDay = today()
+	data.DailyStreak = streak
+	notify(player, `🎁 День {streak}: +{Format.Number(reward)}! Заходи завтра, награда вырастет`, "money")
+	sendState(player)
+end)
+
+RedeemCode.OnServerEvent:Connect(function(player, rawCode)
+	local session = sessions[player]
+	local data = DataService.Get(player)
+	if not session or not data or type(rawCode) ~= "string" or #rawCode > 40 then
+		return
+	end
+	if not canAct(session) then
+		return
+	end
+	local code = string.upper((string.gsub(rawCode, "%s", "")))
+	local reward = Config.Codes[code]
+	if not reward then
+		notify(player, "❌ Такого кода нет", "bad")
+		return
+	end
+	if table.find(data.RedeemedCodes, code) then
+		notify(player, "Этот код уже активирован", "bad")
+		return
+	end
+
+	local amount = math.floor((reward.Cash or 0) + getIncome(session, data) * 60 * (reward.IncomeMinutes or 0))
+	data.Cash += amount
+	table.insert(data.RedeemedCodes, code)
+	notify(player, `🎟️ Код {code}: +{Format.Number(amount)}!`, "money")
+	sendState(player)
+end)
+
 RequestState.OnServerEvent:Connect(function(player)
 	sendState(player)
 end)
@@ -512,6 +614,33 @@ for _, plot in plots do
 		collect(player)
 	end)
 end
+
+-- Лифт: переносит любого игрока на крышу башни этого участка
+local liftCooldown: { [Player]: number } = {}
+for _, plot in plots do
+	plot.Lift.Touched:Connect(function(hit)
+		local character = hit.Parent
+		local player = character and Players:GetPlayerFromCharacter(character)
+		if not player or not character then
+			return
+		end
+		if os.clock() - (liftCooldown[player] or 0) < 2 then
+			return
+		end
+		liftCooldown[player] = os.clock()
+		if #plot.Floors == 0 then
+			notify(player, "🛗 Сначала построй хотя бы один этаж", "info")
+			return
+		end
+		character:PivotTo(plot.Roof.CFrame * CFrame.new(0, 5, 0))
+	end)
+end
+Players.PlayerRemoving:Connect(function(player)
+	liftCooldown[player] = nil
+end)
+
+Leaderboard.CreateBoard(CFrame.new(0, 9, -14))
+Leaderboard.Start()
 
 Players.PlayerAdded:Connect(onPlayerAdded)
 Players.PlayerRemoving:Connect(onPlayerRemoving)
@@ -574,12 +703,30 @@ task.spawn(function()
 	end
 end)
 
--- Автосохранение
+-- Золотой час
+task.spawn(function()
+	while true do
+		task.wait(math.random(Config.GOLDEN_MIN, Config.GOLDEN_MAX))
+		goldenEndsAt = os.time() + Config.GOLDEN_DURATION
+		local minutes = math.floor(Config.GOLDEN_DURATION / 60)
+		Notify:FireAllClients(`✨ Золотой час! x{Config.GOLDEN_MULTIPLIER} доход на {minutes} мин.`, "golden")
+		task.wait(Config.GOLDEN_DURATION)
+		Notify:FireAllClients("Золотой час закончился", "info")
+	end
+end)
+
+-- Автосохранение и рекорды
 task.spawn(function()
 	while true do
 		task.wait(Config.AUTOSAVE_INTERVAL)
 		for player in sessions do
-			task.spawn(DataService.Save, player)
+			task.spawn(function()
+				DataService.Save(player)
+				local data = DataService.Get(player)
+				if data then
+					Leaderboard.Submit(player.UserId, data.BestFloors)
+				end
+			end)
 		end
 	end
 end)
