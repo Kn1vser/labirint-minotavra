@@ -51,7 +51,7 @@ vec3 shade(vec3 alb, vec3 N, vec3 V, float rough, float ao){
     vec3 amb = mix(vec3(0.10,0.09,0.07), vec3(0.20,0.25,0.33), N.y*0.5+0.5);
     vec3 H = normalize(L + V);
     float spec = pow(clamp(dot(N, H), 0.0, 1.0), mix(80.0, 8.0, rough)) * (1.0 - rough) * 0.5;
-    return alb * (light_color * diff + amb) * ao + light_color * spec * ao;
+    return alb * (light_color * diff + amb + lamp_light(g_wpos, N)) * ao + light_color * spec * ao + alb * rim_light(N, V);
 }
 '''
 
@@ -63,6 +63,7 @@ in vec3 v_obj; in vec3 v_local; in vec3 v_wpos; in vec3 v_wnrm; in vec3 v_onrm; 
 out vec4 frag;
 
 void main(){
+    g_wpos = v_wpos;
     vec3 N = normalize(v_wnrm);
     if(!gl_FrontFacing) N = -N;
     vec3 V = normalize(cam_pos - v_wpos);
@@ -184,6 +185,7 @@ GROUND_FRAG = '''#version 140
 in vec3 v_obj; in vec3 v_local; in vec3 v_wpos; in vec3 v_wnrm; in vec3 v_onrm; in vec2 v_uv;
 out vec4 frag;
 void main(){
+    g_wpos = v_wpos;
     vec3 p = v_wpos;
     vec3 N = normalize(v_wnrm);
     vec3 V = normalize(cam_pos - p);

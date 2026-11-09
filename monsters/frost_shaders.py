@@ -45,6 +45,23 @@ uniform vec3 light_dir;     // направление НА источник (м�
 uniform vec3 light_color;
 uniform vec3 fog_color;
 uniform float fog_density;
+// керосиновая лампа (точечный тёплый свет) и холодный контровой свет
+uniform vec3 lamp_pos;
+uniform vec3 lamp_color;
+uniform float lamp_power;
+uniform vec3 rim_dir;
+uniform vec3 rim_color;
+vec3 g_wpos = vec3(0.0);
+vec3 lamp_light(vec3 wpos, vec3 N){
+    vec3 d = lamp_pos - wpos;
+    float dist2 = max(dot(d, d), 0.04);
+    float ndl = clamp(dot(N, normalize(d)) * 0.85 + 0.15, 0.0, 1.0);
+    return lamp_color * lamp_power * ndl / (1.0 + dist2 * 0.9);
+}
+vec3 rim_light(vec3 N, vec3 V){
+    float r = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 3.0) * clamp(dot(N, normalize(rim_dir)) * 0.5 + 0.5, 0.0, 1.0);
+    return rim_color * r;
+}
 vec3 apply_fog(vec3 col, vec3 wpos){
     float f = 1.0 - exp(-fog_density * distance(wpos, cam_pos));
     return mix(col, fog_color, clamp(f, 0.0, 1.0));
@@ -432,4 +449,9 @@ GLOBAL_DEFAULTS = dict(
     light_color=(0.80, 0.88, 1.0),
     fog_color=(0.02, 0.025, 0.04),
     fog_density=0.0,
+    lamp_pos=(0, -100, 0),
+    lamp_color=(1.0, 0.62, 0.28),
+    lamp_power=0.0,
+    rim_dir=(0, 0.3, -1),
+    rim_color=(0, 0, 0),
 )

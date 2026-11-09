@@ -21,7 +21,7 @@ from ursina import Entity, Mesh, Vec3, Vec4, camera, scene, time as utime
 from ursina.shaders import unlit_shader
 
 from .babka_mesh import NECK_MAX, PELVIS_Y, SEAT_H, build_babka, skirt_vertices
-from .babka_shaders import FRAYED, MATERIALS, cloth_shader
+from .babka_shaders import FRAYED, MATERIALS, WINDY, cloth_shader
 from .frost_mimic import init_scene_uniforms
 
 L_UP, L_FORE = 0.43, 0.43
@@ -76,6 +76,15 @@ class Babka(Entity):
         self._pitch_head = 0.0
         self._lunge = 0.0
         self._mutter = random.uniform(5, 9)
+        self._blink_t = 9.0
+        self._blink_next = random.uniform(2, 5)
+        self._shudder = 0.0
+        self._shudder_next = random.uniform(6, 12)
+        self._sacc = Vec3(0, 0, 0)
+        self._sacc_next = 0.5
+        self._breath_next = 2.0
+        self.puffs = []
+        self._finger_seed = [random.uniform(0, 10) for _ in range(8)]
 
         self.p = {}
         for s in build_babka():
@@ -88,7 +97,7 @@ class Babka(Entity):
                 e.set_shader_input('material', MATERIALS[s.kind])
                 e.set_shader_input('fray', 1.0 if s.name in FRAYED else 0.0)
                 e.set_shader_input('part_offset', Vec3(*s.body_pos))
-                e.set_shader_input('sway', 0.0)
+                e.set_shader_input('wind', WINDY.get(s.name, 0.0))
             e.name = s.name
             self.p[s.name] = e
         self.shadow = Entity(parent=self, model='quad', texture='radial_gradient', rotation_x=90, y=0.01,
@@ -282,6 +291,11 @@ class Babka(Entity):
 
         bend1 = _lerp(20 * (1 - u) + 8 * sp + 6 * self._lunge, 12, sit) + math.sin(self._t * 0.6) * 2 * sit
         bend2 = _lerp(26 * (1 - u) + 6 * sp + 6 * self._lunge, 20, sit) + 10 * self.eyes
+        breath = math.sin(self._t * 1.5)
+        rock = math.sin(self._t * 0.85) * 4.0 * sit                       # медленно раскачивается, как в горе
+        shud = math.sin(self._t * 47.0) * 1.6 * self._shudder
+        bend1 += rock + shud
+        bend2 += breath * 1.3
         p['spine1'].rotation_x = bend1
         p['spine1'].rotation_z = s * 2.5 * (0.3 + sp) * (1 - sit)
         p['spine2'].rotation_x = bend2
@@ -290,7 +304,31 @@ class Babka(Entity):
         p['neck_slide'].y = NECK_MAX * max(0.0, (u - 0.3) / 0.7) + 0.08 * self._lunge
         p['head'].rotation_x = -(tilt_total + p['neck'].rotation_x) + 4 + self._pitch_head + 12 * self.eyes
         p['head'].rotation_y = self._yaw_head
-        p['head'].rotation_z = self._tilt + math.sin(self._t * 0.8) * 1.5
+        p['head'].rotation_z = self._tilt + math.sin(self._t * 0.8) * 1.5 + math.sin(self._t * 53.0) * 2.0 * self._shudder
+        p['head'].rotation_x -= rock * 0.8                                   # взгляд не отрывается, пока качается
+        for side, sx in (('R', 1), ('L', -1)):
+            p[f'shoulder_{side}'].y = 0.26 + breath * 0.006
+
+        # глаза: следят за целью короткими рывками; веки моргают
+        for sx in (1, -1):
+            eye = p[f'eye_{sx}']
+            eye.rotation = Vec3(self._sacc.x - self._pitch_head * 0.3, self._sacc.y, 0)
+            close = max(0.0, 1 - abs(self._blink_t - 0.09) / 0.09) if self._blink_t < 0.18 else 0.0
+            close = max(close, 0.55 * self.eyes)
+            p[f'lid_{sx}'].rotation_x = -18 + 52 * close
+            p[f'lid_{sx}'].scale_y = 1 + 0.6 * close
+
+        # пальцы: у лица слегка поджаты и подрагивают, при хватке растопырены и загнуты крючком
+        for side in ('R', 'L'):
+            for k in range(4):
+                sd = self._finger_seed[k + (0 if side == 'R' else 4)]
+                tap = max(0.0, math.sin(self._t * 1.3 + sd)) ** 12 * 14       # редкое «постукивание»
+                twitch = math.sin(self._t * 9.0 + sd * 3) * 1.2
+                curl_a = _lerp(_lerp(6, 4, self.reach) + tap + twitch, 12, self.cover) + 30 * self.reach * self._lunge
+                curl_b = _lerp(10 + twitch, 18 + tap * 0.6, self.cover) + 35 * self.reach * self._lunge
+                spread = (k - 1.5) * _lerp(4, 9, self.reach)
+                p[f'f{k}a_{side}'].rotation = Vec3(-curl_a, 0, spread)
+                p[f'f{k}b_{side}'].rotation_x = -curl_b
 
         # ноги
         for side, sx in (('R', 1), ('L', -1)):
@@ -331,4 +369,50 @@ class Babka(Entity):
         NodePath.set_shader_input(scene, 'time', self._t)
         NodePath.set_shader_input(scene, 'cam_pos', Vec3(*camera.world_position))
         self._brain(dt)
+        self._life(dt)
         self._pose(dt)
+
+    def _life(self, dt):
+        self._blink_t += dt
+        self._blink_next -= dt
+        if self._blink_next <= 0:
+            self._blink_t = 0.0
+            self._blink_next = random.uniform(2.5, 7) if self.state == 'sit' else random.uniform(5, 12)  # в погоне почти не моргает
+        self._shudder_next -= dt
+        if self._shudder_next <= 0:
+            self._shudder = 1.0
+            self._shudder_next = random.uniform(7, 14)
+        self._shudder = max(0.0, self._shudder - dt * 1.6)
+        self._sacc_next -= dt
+        if self._sacc_next <= 0:
+            self._sacc = Vec3(random.uniform(-4, 4), random.uniform(-6, 6), 0)
+            self._sacc_next = random.uniform(0.3, 1.4)
+        # пар изо рта сквозь пальцы
+        self._breath_next -= dt
+        if self._breath_next <= 0 and self.cover > 0.6:
+            self._breath_next = random.uniform(2.8, 4.2)
+            mouth = self._head_point(0, 0.045, 0.14)
+            fwd = Vec3(*scene.getRelativeVector(self.p['head'], Vec3(0, 0, 1))).normalized()
+            for _ in range(7):
+                e = Entity(model='quad', texture='radial_gradient', billboard=True, shader=unlit_shader,
+                           position=mouth + Vec3(random.uniform(-.03, .03), random.uniform(-.02, .02), 0),
+                           scale=0.03, color=Vec4(0.85, 0.85, 0.85, 0))
+                e.setTransparency(True)
+                e.set_depth_write(False)
+                e.vel = fwd * random.uniform(0.08, 0.16) + Vec3(random.uniform(-.03, .03), random.uniform(0.04, 0.09), 0)
+                e.life = random.uniform(-0.3, 0.0)
+                self.puffs.append(e)
+        alive = []
+        for e in self.puffs:
+            e.life += dt
+            if e.life >= 2.2:
+                from ursina import destroy
+                destroy(e)
+                continue
+            if e.life > 0:
+                k = e.life / 2.2
+                e.position += e.vel * dt
+                e.scale = 0.03 + k * 0.12
+                e.color = Vec4(0.85, 0.85, 0.85, 0.16 * math.sin(math.pi * k))
+            alive.append(e)
+        self.puffs = alive

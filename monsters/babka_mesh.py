@@ -182,6 +182,17 @@ def build_babka(seed=4):
     hood = cut(hood, lambda c: (c[:, 2] > 0.0) & (((c[:, 0] / 0.066) ** 2 + ((c[:, 1] - 0.085) / 0.1) ** 2 < 1)
                                                    | ((c[:, 1] < 0.02) & (np.abs(c[:, 0]) < 0.055 + (0.02 - c[:, 1]) * 0.6))))
     P(PartSpec('hood', 'head', (0, 0, 0), mesh=hood, kind='linen'))
+    ky = np.array([-0.26, -0.13, -0.03, 0.07, 0.15, 0.2, 0.24])
+    krx = np.array([0.24, 0.17, 0.125, 0.112, 0.104, 0.088, 0.05])
+    krz = np.array([0.21, 0.16, 0.13, 0.125, 0.116, 0.098, 0.058])
+    kcz = np.array([-0.06, -0.035, -0.012, 0.0, -0.008, -0.014, -0.016])
+    rim = []
+    for t in np.linspace(-0.55, math.pi + 0.55, 40):
+        x, y = 0.066 * math.cos(t), 0.085 + 0.1 * math.sin(t)
+        rx, rz, cz = np.interp(y, ky, krx), np.interp(y, ky, krz), np.interp(y, ky, kcz)
+        z = cz + rz * math.sqrt(max(1 - (x / rx) ** 2, 0.0))
+        rim.append((x * 1.04, y, z + 0.003))
+    P(PartSpec('hood_rim', 'head', (0, 0, 0), mesh=tube_path(rim, [0.0065] * len(rim), seg=8), kind='linen'))
 
     # руки: длинные, в широких рукавах; кисть на отдельном узле для наведения ладоней на лицо
     for side, sx in (('R', 1), ('L', -1)):
@@ -204,21 +215,29 @@ def build_babka(seed=4):
         palm = loft([(0.015, 0.024, 0.014, 0, 0), (0.0, 0.028, 0.015, 0, 0), (-0.085, 0.037, 0.012, 0, 0.002),
                      (-0.1, 0.034, 0.011, 0, 0.002)], rings=12, seg=16, round_start=0.015, round_end=0.01, noise=0.05,
                     noise_scale=60, seed=seed)
-        fingers = []
-        for fx, L in ((0.026, 0.13), (0.009, 0.15), (-0.009, 0.145), (-0.025, 0.118)):
-            ts = np.linspace(0, 1, 9)
-            pts = [(fx * (1 + 0.15 * t), -0.095 - L * t, 0.005 + 0.03 * t * t) for t in ts]
-            r = 0.0072 * (1 - 0.35 * ts) * (1 + 0.28 * np.exp(-((ts - 0.38) ** 2) / 0.004) + 0.22 * np.exp(-((ts - 0.7) ** 2) / 0.004))
-            fingers.append(tube_path(pts, r, seg=8))
-        fingers.append(tube_path([(0.03, -0.02, 0.012), (0.04, -0.06, 0.03), (0.035, -0.1, 0.038)],
-                                 [0.009, 0.008, 0.006], seg=8))
-        hand = merge([palm] + fingers)
+        thumb = tube_path([(0.03, -0.02, 0.012), (0.04, -0.06, 0.03), (0.035, -0.1, 0.038)], [0.009, 0.008, 0.006], seg=8)
+        hand = merge([palm, thumb])
         hand.vertices *= 0.85
         if sx < 0:                                    # левая — зеркальная
             hand.vertices[:, 0] *= -1
             hand.normals[:, 0] *= -1
             hand.triangles = hand.triangles[:, ::-1].copy()
         P(PartSpec(f'hand_{side}', f'hand_aim_{side}', (0, 0, 0), mesh=hand, kind='skin'))
+        # пальцы: две фаланги на шарнирах (сгибаются, подрагивают), с ногтями
+        for k, (fx, L) in enumerate(((0.026, 0.13), (0.009, 0.15), (-0.009, 0.145), (-0.025, 0.118))):
+            L *= 0.85
+            fx *= 0.85 * sx
+            r0 = 0.0062
+            P(PartSpec(f'f{k}a_{side}', f'hand_aim_{side}', (fx, -0.082, 0.004), kind='none'))
+            ts = np.linspace(0, 1, 7)
+            prox = tube_path([(0, -0.55 * L * t, 0) for t in ts],
+                             r0 * (1 - 0.15 * ts) * (1 + 0.25 * np.exp(-((ts - 0.05) ** 2) / 0.01) + 0.22 * np.exp(-((ts - 1.0) ** 2) / 0.01)), seg=8)
+            P(PartSpec(f'f{k}prox_{side}', f'f{k}a_{side}', (0, 0, 0), mesh=prox, kind='skin'))
+            P(PartSpec(f'f{k}b_{side}', f'f{k}a_{side}', (0, -0.55 * L, 0), kind='none'))
+            dist = tube_path([(0, -0.45 * L * t, 0.002 * t) for t in ts], r0 * 0.88 * (1 - 0.3 * ts ** 2), seg=8)
+            P(PartSpec(f'f{k}dist_{side}', f'f{k}b_{side}', (0, 0, 0), mesh=dist, kind='skin'))
+            P(PartSpec(f'f{k}nail_{side}', f'f{k}b_{side}', (0, -0.45 * L + 0.009, -r0 * 0.62),
+                       mesh=ellipsoid(r0 * 0.78, 0.0085, 0.0018, rings=8, seg=12), kind='nail'))
 
     # ноги под платьем + стоптанные ботинки
     for side, sx in (('R', 1), ('L', -1)):

@@ -14,7 +14,34 @@ sepia_shader — постобработка камеры: сепия, зерно
 from ursina import Shader
 
 from .frost_shaders import COMMON_UNIFORMS, NOISE
-from .kochkar_shaders import VERT
+
+VERT = '''#version 140
+uniform mat4 p3d_ModelViewProjectionMatrix;
+uniform mat4 p3d_ModelMatrix;
+in vec4 p3d_Vertex;
+in vec3 p3d_Normal;
+in vec2 p3d_MultiTexCoord0;
+uniform vec3 part_offset;
+uniform float wind;          // колыхание ткани у края (подол, края покрывала)
+uniform float time;
+out vec3 v_obj; out vec3 v_local; out vec3 v_wpos; out vec3 v_wnrm; out vec3 v_onrm; out vec2 v_uv;
+void main(){
+    vec4 v = p3d_Vertex;
+    vec3 w = (p3d_ModelMatrix * v).xyz;
+    if(wind > 0.0){
+        float edge = pow(clamp(1.0 - p3d_MultiTexCoord0.y, 0.0, 1.0), 2.0);
+        float g = sin(time*1.3 + w.x*3.0 + w.z*2.0) * 0.6 + sin(time*2.9 + w.y*7.0 + w.x*5.0) * 0.4;
+        v.xyz += vec3(g*0.6, 0.0, g) * edge * wind * 0.03;
+    }
+    gl_Position = p3d_ModelViewProjectionMatrix * v;
+    v_local = p3d_Vertex.xyz;
+    v_obj = p3d_Vertex.xyz + part_offset;
+    v_wpos = (p3d_ModelMatrix * v).xyz;
+    v_wnrm = normalize(mat3(p3d_ModelMatrix) * p3d_Normal);
+    v_onrm = p3d_Normal;
+    v_uv = p3d_MultiTexCoord0;
+}
+'''
 
 LIGHT = '''
 vec3 shade(vec3 alb, vec3 N, vec3 V, float gloss, float ao){
@@ -23,7 +50,10 @@ vec3 shade(vec3 alb, vec3 N, vec3 V, float gloss, float ao){
     vec3 amb = mix(vec3(0.05,0.05,0.05), vec3(0.11,0.12,0.14), N.y*0.5+0.5);
     vec3 H = normalize(L + V);
     float spec = pow(clamp(dot(N, H), 0.0, 1.0), mix(8.0, 70.0, gloss)) * gloss;
-    return (alb * (light_color*diff + amb) + light_color*spec*0.4) * ao;
+    vec3 lamp = lamp_light(g_wpos, N);
+    vec3 Hl = normalize(normalize(lamp_pos - g_wpos) + V);
+    float specl = pow(clamp(dot(N, Hl), 0.0, 1.0), mix(8.0, 70.0, gloss)) * gloss;
+    return (alb * (light_color*diff + amb + lamp) + light_color*spec*0.4 + lamp*specl*0.6) * ao + alb * rim_light(N, V) * 1.4;
 }
 '''
 
@@ -48,6 +78,7 @@ vec3 skin_albedo(vec3 p, vec3 lp, float forehead){
 }
 
 void main(){
+    g_wpos = v_wpos;
     vec3 N = normalize(v_wnrm);
     bool inside = !gl_FrontFacing;
     if(inside) N = -N;
@@ -61,6 +92,25 @@ void main(){
         float forehead = material == 1 ? smoothstep(0.12, 0.17, lp.y) : 0.0;
         vec3 alb = skin_albedo(p, lp, forehead);
         float ao = material == 1 ? v_uv.x : 1.0;
+        if(material == 1){
+            // «гусиные лапки» у глаз и складки на переносице
+            for(int k=0; k<2; k++){
+                vec2 c = vec2(k == 0 ? 0.052 : -0.052, 0.112);
+                vec2 q = lp.xy - c;
+                float a = atan(q.y, q.x);
+                float rr = length(q);
+                float feet = smoothstep(0.6, 0.95, sin(a*14.0)) * smoothstep(0.004, 0.012, rr) * smoothstep(0.03, 0.012, rr);
+                alb *= 1.0 - feet*0.35*step(0.0, (k == 0 ? q.x : -q.x));
+            }
+            alb *= 1.0 - smoothstep(0.7, 1.0, sin(lp.x*420.0)) * smoothstep(0.012, 0.0, abs(lp.x)) * smoothstep(0.1, 0.13, lp.y)*0.3;
+        } else {
+            // сухожилия и вены на тыльной стороне кисти, складки на суставах
+            float tend = smoothstep(0.75, 1.0, sin(lp.x*190.0)) * step(lp.y, -0.02) * step(-0.09, lp.y);
+            float vein = smoothstep(0.03, 0.0, abs(lp.x - 0.01 + sin(lp.y*60.0)*0.006)) * step(lp.y, 0.0) * step(-0.08, lp.y);
+            alb = mix(alb, alb*1.12, tend*0.5);
+            alb = mix(alb, alb*vec3(0.75,0.78,0.9), vein*0.45);
+            alb *= 1.0 - smoothstep(0.85, 1.0, sin(lp.y*700.0)) * 0.05;
+        }
         alb *= mix(0.35, 1.0, ao);                                   // глазницы и щёки в тени
         alb = mix(alb, alb*vec3(0.85,0.72,0.75), (1.0 - ao)*0.6);   // синюшность под глазами
         col = shade(alb, N, V, 0.25, mix(0.45, 1.0, ao));
@@ -78,6 +128,14 @@ void main(){
         float ground = clamp(1.0 - v_wpos.y / 0.6, 0.0, 1.0);
         alb = mix(alb, vec3(0.17,0.14,0.10), clamp(ground * fbm(p*9.0 + 2.0) * 1.2, 0.0, 0.8));  // грязь у подола
         alb = mix(alb, vec3(0.55,0.52,0.46), smoothstep(0.72, 0.85, fbm(p*20.0)) * 0.35);       // выгоревшие места
+        // заплатки со стежками
+        vec3 pv = voronoi(p*vec3(5.0, 4.0, 5.0) + 11.0);
+        float patchM = step(0.86, pv.z) * smoothstep(0.30, 0.26, pv.x);
+        float seam = step(0.86, pv.z) * (smoothstep(0.24, 0.27, pv.x) - smoothstep(0.29, 0.32, pv.x));
+        float stitch = seam * step(0.5, fract((p.x + p.y + p.z)*90.0));
+        alb = mix(alb, mix(vec3(0.30,0.27,0.22), vec3(0.42,0.36,0.28), fbm(p*30.0)), patchM);
+        alb = mix(alb, vec3(0.62,0.58,0.50), stitch*0.8);
+        alb *= 1.0 - seam*0.25;
         alb *= weave;
         if(inside) alb *= 0.45;
         col = shade(alb, N, V, 0.03, 1.0);
@@ -100,6 +158,10 @@ void main(){
     else if(material == 4){                        // седые пряди
         vec3 alb = vec3(0.62,0.60,0.56) * (0.8 + 0.3*vnoise(p*300.0));
         col = shade(alb, N, V, 0.3, 0.9);
+    }
+    else if(material == 6){                        // ногти: жёлтые, толстые, с бороздками
+        vec3 alb = mix(vec3(0.55,0.50,0.38), vec3(0.68,0.62,0.48), smoothstep(0.3, 0.7, sin(lp.x*900.0)*0.5+0.5));
+        col = shade(alb, N, V, 0.5, 1.0);
     }
     else {                                         // кожа ботинок
         vec3 alb = mix(vec3(0.10,0.08,0.06), vec3(0.20,0.16,0.12), fbm(p*20.0));
@@ -134,5 +196,6 @@ cloth_shader = Shader(name='babka_cloth', language=Shader.GLSL, vertex=VERT, fra
 sepia_shader = Shader(name='sepia_photo', language=Shader.GLSL, fragment=SEPIA_FRAG,
                       default_input=dict(strength=1.0, time=0.0))
 
-MATERIALS = dict(skin=0, face=1, linen=2, eye=3, hair=4, leather=5)
+MATERIALS = dict(skin=0, face=1, linen=2, eye=3, hair=4, leather=5, nail=6)
 FRAYED = ('skirt', 'shawl', 'hood', 'forearm_R', 'forearm_L')
+WINDY = {'skirt': 1.0, 'shawl': 1.3, 'hood': 0.8, 'forearm_R': 0.6, 'forearm_L': 0.6}
