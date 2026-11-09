@@ -25,6 +25,7 @@
 
 ```bash
 pip install ursina
+python babka_trailer.py         # трейлер вживую (--fullscreen — на весь экран)
 python babka_demo.py            # WASD, Shift — бег, F — фонарь, C — кинокамера, P — кино/фото, Tab — свободная камера
 python tools/render_babka.py    # кинокадры, GIF-трейлер и кадр «как на фото»
 ```
