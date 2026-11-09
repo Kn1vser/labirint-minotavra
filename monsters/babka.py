@@ -1,33 +1,36 @@
 """
-«Бабка» — враг. Жуткая советская бабушка.
+«Бабка» — враг (по фото-референсу).
 
-Ходит сгорбившись, шаркает валенками, бормочет. Лицо в тени платка, светятся только
-толстые круглые очки, на лице застывшая улыбка с золотым зубом. Заметив игрока, медленно
-распрямляется, шея в шарфе вытягивается из платка, голова склоняется набок — и она
-быстро шаркает следом, протянув длинные руки. Свет фонаря её слепит: закрывает очки руками.
+Измождённая старуха в длинном грязном покрывале сидит на ступеньке крыльца, закрыв рот
+ладонями, и смотрит на тебя. Подойдёшь — медленно встаёт. Она выше человека, руки и пальцы
+слишком длинные. Идёт следом, не отнимая ладоней от лица; голос глухой, из-под ладоней.
+Когда хватает — опускает руки: рта под ними нет, только гладкая кожа.
+Свет фонаря ей неприятен: закрывает глаза ладонями и замирает на пару секунд.
 
     from monsters.babka import Babka
-    b = Babka(position=(0, 0, 10), target=player, waypoints=[(0,0,10), (6,0,4), (-4,0,0)])
-    b.on_say = lambda text: subtitle.set(text)
-    b.on_catch = lambda: game_over()
-    b.flash()          # игрок посветил фонарём
+    b = Babka(position=(0, 0, 9), target=player_head, sitting=True)
+    b.on_say = show_subtitle
+    b.on_catch = game_over
+    b.flash()
 """
 import math
 import random
 
-from panda3d.core import NodePath
+from panda3d.core import NodePath, Point3
 from ursina import Entity, Mesh, Vec3, Vec4, camera, scene, time as utime
 from ursina.shaders import unlit_shader
-from panda3d.core import TransparencyAttrib
 
-from .babka_mesh import NECK_MAX, build_babka
-from .babka_shaders import MATERIALS, cloth_shader, lens_shader
+from .babka_mesh import NECK_MAX, PELVIS_Y, SEAT_H, build_babka, skirt_vertices
+from .babka_shaders import FRAYED, MATERIALS, cloth_shader
 from .frost_mimic import init_scene_uniforms
 
-LINES_NOTICE = ['Внучек?..', 'Это кто там у меня?', 'А я тебя вижу.']
-LINES_CHASE = ['Куда без шапки?!', 'Иди покушай, остынет!', 'Стой, кому говорю!', 'Бабушку не слушаешь?']
-LINES_LOST = ['Ну ничего... придёшь ещё.', 'Всё равно найду.']
-LINES_PATROL = ['…огурчики закрыла…', '…пенсия в четверг…', '…ходят тут…']
+L_UP, L_FORE = 0.43, 0.43
+SX, SZ = -1, -1          # знаки поворотов (как у ног Кочкаря — та же иерархия)
+
+LINES_NOTICE = ['…тише…', 'Ты чей будешь?..', 'Я тебя ждала.']
+LINES_CHASE = ['Не ходи туда, внучек…', 'Посиди со мной…', 'Куда же ты…', 'Тш-ш-ш…']
+LINES_LOST = ['…вернёшься.', '…я подожду.']
+LINES_IDLE = ['…', '…м-м-м…', '…тише…']
 
 
 def _approach(cur, target, rate, dt):
@@ -38,13 +41,17 @@ def _angle_diff(a, b):
     return (b - a + 180) % 360 - 180
 
 
+def _lerp(a, b, t):
+    return a + (b - a) * t
+
+
 class Babka(Entity):
     fixed_dt = None
-    detect_range = 13.0
+    detect_range = 9.0
     lose_range = 24.0
-    fov = 75                 # половина угла обзора
+    fov = 80
 
-    def __init__(self, target=None, waypoints=None, **kwargs):
+    def __init__(self, target=None, waypoints=None, sitting=True, **kwargs):
         super().__init__(**kwargs)
         init_scene_uniforms()
         self.target = target
@@ -52,65 +59,58 @@ class Babka(Entity):
         self._wp = 0
         self.on_say = None
         self.on_catch = None
-        self.state = 'patrol'
+        self.state = 'sit' if sitting else 'patrol'
         self._st = 0.0
         self._t = 0.0
         self._speed = 0.0
         self._phase = 0.0
-        self.unfold = 0.0        # 0 сгорблена, 1 распрямилась и вытянула шею
-        self.reach = 0.0         # руки вперёд
-        self.cover = 0.0         # закрывает очки
-        self.glow = 0.15
-        self.blind = 0.0
+        self.sit = 1.0 if sitting else 0.0
+        self._seated_origin = sitting
+        self._skirt_sit = -1.0
+        self.unfold = 0.0
+        self.reach = 0.0
+        self.cover = 1.0        # ладони у лица
+        self.eyes = 0.0         # 0 — закрывает рот, 1 — закрывает глаза
         self._tilt = 0.0
         self._yaw_head = 0.0
+        self._pitch_head = 0.0
         self._lunge = 0.0
-        self._mutter = random.uniform(4, 8)
+        self._mutter = random.uniform(5, 9)
 
-        specs = build_babka()
         self.p = {}
-        for s in specs:
+        for s in build_babka():
             parent = self.p.get(s.parent, self)
             if s.mesh is None:
                 e = Entity(parent=parent, position=s.pos, rotation=s.rot)
             else:
-                m = Mesh(**s.mesh.to_ursina_args())
-                if s.kind == 'lens':
-                    e = Entity(parent=parent, position=s.pos, rotation=s.rot, model=m, shader=lens_shader)
-                else:
-                    mat, col, gl = MATERIALS[s.kind]
-                    e = Entity(parent=parent, position=s.pos, rotation=s.rot, model=m, shader=cloth_shader,
-                               double_sided=s.kind in ('platok', 'net', 'dress'))
-                    e.set_shader_input('material', mat)
-                    e.set_shader_input('base_color', Vec3(*col))
-                    e.set_shader_input('gloss', float(gl))
-                    if s.kind == 'jar':
-                        e.setTransparency(TransparencyAttrib.M_alpha)
+                e = Entity(parent=parent, position=s.pos, rotation=s.rot, model=Mesh(**s.mesh.to_ursina_args(), static=False),
+                           shader=cloth_shader, double_sided=s.kind == 'linen')
+                e.set_shader_input('material', MATERIALS[s.kind])
+                e.set_shader_input('fray', 1.0 if s.name in FRAYED else 0.0)
                 e.set_shader_input('part_offset', Vec3(*s.body_pos))
                 e.set_shader_input('sway', 0.0)
-                e.set_shader_input('face_shadow', 1.0 if s.parent == 'head' and s.kind == 'skin' else 0.0)
             e.name = s.name
-            parts = self.p
-            parts[s.name] = e
-
+            self.p[s.name] = e
         self.shadow = Entity(parent=self, model='quad', texture='radial_gradient', rotation_x=90, y=0.01,
-                             scale=1.4, color=Vec4(0, 0, 0, 0.55), shader=unlit_shader)
+                             scale=1.3, color=Vec4(0, 0, 0, 0.5), shader=unlit_shader)
         self.shadow.set_depth_write(False)
-        self._pose(0)
+        self._pose(0.0)
 
     # ------------------------------------------------------------ API
     def flash(self):
-        """Игрок посветил фонарём ей в лицо."""
-        if self.state in ('notice', 'chase', 'grab', 'search', 'patrol'):
+        if self.state not in ('caught',):
             self._set('stunned')
-            self._say(random.choice(['Ой! Глаза-то!', 'Убери, ирод!']))
+            self._say(random.choice(['…не надо…', 'Убери-и…']))
 
     def alert(self):
-        if self.state in ('patrol', 'search'):
+        if self.state == 'sit':
+            self._set('rise')
+            self._say(random.choice(LINES_NOTICE))
+        elif self.state in ('patrol', 'search'):
             self._set('notice')
             self._say(random.choice(LINES_NOTICE))
 
-    # ------------------------------------------------------------ внутреннее
+    # ------------------------------------------------------------ мозг
     def _say(self, text):
         if self.on_say:
             self.on_say(text)
@@ -125,17 +125,12 @@ class Babka(Entity):
         t = self.target
         return Vec3(*(t.world_position if hasattr(t, 'world_position') else t))
 
-    def _move_toward(self, goal, speed, dt, turn_rate=120):
+    def _turn_to(self, goal, rate, dt):
         to = goal - self.world_position
-        to.y = 0
-        dist = to.length()
-        if dist > 0.01:
-            want = math.degrees(math.atan2(to.x, to.z))
-            turn = _angle_diff(self.rotation_y, want)
-            self.rotation_y += max(-turn_rate * dt, min(turn_rate * dt, turn))
-            facing = max(0.2, 1 - abs(turn) / 90)
-            self._speed = _approach(self._speed, speed * facing, 3, dt)
-        return dist
+        want = math.degrees(math.atan2(to.x, to.z))
+        turn = _angle_diff(self.rotation_y, want)
+        self.rotation_y += max(-rate * dt, min(rate * dt, turn))
+        return abs(turn)
 
     def _brain(self, dt):
         tp = self._target_pos()
@@ -145,128 +140,190 @@ class Babka(Entity):
             d.y = 0
             dist = d.length()
             ang = abs(_angle_diff(self.rotation_y, math.degrees(math.atan2(d.x, d.z))))
-            seen = dist < self.detect_range and (ang < self.fov or dist < 3.0)
-
-        st = self.state
+            seen = dist < self.detect_range and (ang < self.fov or dist < 2.5)
         self._st += dt
-        if st == 'patrol':
-            if self.waypoints:
-                if self._move_toward(self.waypoints[self._wp], 0.55, dt, 60) < 0.4:
-                    self._wp = (self._wp + 1) % len(self.waypoints)
-            else:
-                self._speed = _approach(self._speed, 0, 3, dt)
+        st = self.state
+        want_speed = 0.0
+        if st == 'sit':
             self._mutter -= dt
-            if self._mutter <= 0:
-                self._say(random.choice(LINES_PATROL))
-                self._mutter = random.uniform(6, 12)
+            if self._mutter < 0:
+                self._say(random.choice(LINES_IDLE))
+                self._mutter = random.uniform(7, 14)
+            if seen:
+                self.alert()
+        elif st == 'rise':
+            if self._st > 2.8:
+                self._set('chase')
+                self._say(random.choice(LINES_CHASE))
+        elif st == 'patrol':
+            if self.waypoints:
+                goal = self.waypoints[self._wp]
+                if (goal - self.world_position).length() < 0.4:
+                    self._wp = (self._wp + 1) % len(self.waypoints)
+                turn = self._turn_to(goal, 50, dt)
+                want_speed = 0.5 * max(0.2, 1 - turn / 90)
             if seen:
                 self.alert()
         elif st == 'notice':
-            self._speed = _approach(self._speed, 0, 6, dt)
             if tp is not None:
-                self._move_toward(tp, 0.0, dt, 90)
-            if self._st > 1.9:
+                self._turn_to(tp, 90, dt)
+            if self._st > 1.8:
                 self._set('chase')
                 self._say(random.choice(LINES_CHASE))
         elif st == 'chase':
-            self._move_toward(tp, 3.1, dt, 160)
-            if dist < 1.5:
+            turn = self._turn_to(tp, 150, dt)
+            want_speed = 2.7 * max(0.2, 1 - turn / 90)
+            if dist < 1.45:
                 self._set('grab')
             elif dist > self.lose_range:
                 self._set('search')
                 self._say(random.choice(LINES_LOST))
-            elif random.random() < dt * 0.12:
+            elif random.random() < dt * 0.1:
                 self._say(random.choice(LINES_CHASE))
         elif st == 'grab':
-            self._speed = _approach(self._speed, 1.0, 8, dt)
             if tp is not None:
-                self._move_toward(tp, 1.0, dt, 200)
-            if self._st > 0.45:
-                if dist < 1.6:
+                self._turn_to(tp, 200, dt)
+            want_speed = 1.0
+            if self._st > 0.5:
+                if dist < 1.65:
                     self._set('caught')
-                    self._say('Попался, внучек.')
+                    self._say('…вот и посидим.')
                     if self.on_catch:
                         self.on_catch()
                 else:
                     self._set('chase')
         elif st == 'caught':
-            self._speed = _approach(self._speed, 0, 8, dt)
             if self._st > 3.0:
                 self._set('search')
         elif st == 'stunned':
-            self._speed = _approach(self._speed, 0, 8, dt)
             if self._st > 2.6:
-                self._set('chase' if seen or dist < self.lose_range else 'search')
+                self._set('chase' if dist < self.lose_range else 'search')
         elif st == 'search':
-            self._speed = _approach(self._speed, 0.4, 2, dt)
-            self.rotation_y += math.sin(self._t * 0.8) * 40 * dt
+            self.rotation_y += math.sin(self._t * 0.7) * 35 * dt
+            want_speed = 0.35
             if seen and self._st > 1.0:
                 self._set('notice')
-                self._say(random.choice(LINES_NOTICE))
-            elif self._st > 5:
+            elif self._st > 6:
                 self._set('patrol')
-        self.position += self.forward * self._speed * dt
+        self._speed = _approach(self._speed, want_speed, 3, dt)
+        if self.sit < 0.02:
+            self.position += self.forward * self._speed * dt
 
-        # целевые значения позы
-        targets = dict(
-            patrol=(0.0, 0.0, 0.0, 0.15), notice=(1.0, 0.0, 0.0, 1.0), chase=(0.85, 0.65, 0.0, 1.0),
-            grab=(1.0, 1.0, 0.0, 1.3), caught=(1.0, 1.0, 0.0, 1.0), stunned=(0.25, 0.0, 1.0, 0.0),
-            search=(0.4, 0.0, 0.0, 0.6),
-        )[self.state]
-        rate = 1.6 if self.state == 'notice' else 4
-        self.unfold = _approach(self.unfold, targets[0], rate, dt)
-        self.reach = _approach(self.reach, targets[1], 6, dt)
-        self.cover = _approach(self.cover, targets[2], 8, dt)
-        self.glow = _approach(self.glow, targets[3], 3, dt)
-        self.blind = _approach(self.blind, 1.0 if self.state == 'stunned' and self._st < 0.6 else 0.0, 6, dt)
-        self._lunge = _approach(self._lunge, 1.0 if self.state in ('grab', 'caught') else 0.0, 10, dt)
+        # цели позы: (сидит, распрямилась, руки вперёд, ладони у лица, у глаз)
+        T = dict(sit=(1, 0, 0, 1, 0), rise=(0, 0.2, 0, 1, 0), patrol=(0, 0, 0, 1, 0), notice=(0, 1, 0, 1, 0),
+                 chase=(0, 0.75, 0, 1, 0), grab=(0, 1, 1, 0, 0), caught=(0, 1, 0.8, 0, 0), stunned=(0, 0.2, 0, 1, 1),
+                 search=(0, 0.4, 0, 1, 0))[self.state]
+        self.sit = _approach(self.sit, T[0], 1.1 if self.state == 'rise' else 3, dt)
+        self.unfold = _approach(self.unfold, T[1], 1.5, dt)
+        self.reach = _approach(self.reach, T[2], 7, dt)
+        self.cover = _approach(self.cover, T[3], 6 if T[3] == 0 else 3, dt)
+        self.eyes = _approach(self.eyes, T[4], 8, dt)
+        self._lunge = _approach(self._lunge, 1.0 if self.state in ('grab', 'caught') else 0.0, 9, dt)
 
-        # голова: следит за целью, когда заметила; склоняется набок
-        want_yaw = 0.0
-        if tp is not None and self.state in ('notice', 'chase', 'grab', 'caught', 'search'):
-            d = tp - self.world_position
-            want_yaw = max(-80, min(80, _angle_diff(self.world_rotation_y, math.degrees(math.atan2(d.x, d.z)))))
-        else:
-            want_yaw = math.sin(self._t * 0.4) * 30
-        self._yaw_head = _approach(self._yaw_head, want_yaw, 3, dt)
-        tilt = {'notice': 28, 'chase': 12, 'grab': 20, 'caught': 32, 'search': 18}.get(self.state, 4)
-        self._tilt = _approach(self._tilt, tilt, 2.5, dt)
+        # смотрит на цель всегда, когда видит (даже сидя)
+        want_yaw, want_pitch = math.sin(self._t * 0.3) * 20, 0.0
+        if tp is not None and dist < self.lose_range:
+            d = tp - Vec3(*self.p['head'].world_position)
+            want_yaw = max(-75, min(75, _angle_diff(self.world_rotation_y, math.degrees(math.atan2(d.x, d.z)))))
+            want_pitch = -math.degrees(math.atan2(d.y, math.hypot(d.x, d.z)))
+        self._yaw_head = _approach(self._yaw_head, want_yaw, 2.0, dt)
+        self._pitch_head = _approach(self._pitch_head, max(-30, min(30, want_pitch)), 2.0, dt)
+        tilt = {'notice': 22, 'rise': 10, 'chase': 8, 'grab': 16, 'caught': 26, 'search': 14, 'sit': 6}.get(self.state, 3)
+        self._tilt = _approach(self._tilt, tilt, 2, dt)
 
+    # ------------------------------------------------------------ IK руки
+    def _solve_arm(self, side, target):
+        sh = self.p[f'shoulder_{side}']
+        d = sh.getRelativePoint(scene, Point3(*target))
+        dx, dy, dz = d[0], d[1], d[2]
+        ab = math.atan2(dx, -dy)
+        dyp = -math.sqrt(dx * dx + dy * dy)
+        if abs(ab) > math.pi / 2:          # цель выше плеча: не переворачиваем плоскость руки
+            ab -= math.copysign(math.pi, ab)
+            dyp = -dyp
+        self.p[f'abduct_{side}'].rotation_z = SZ * math.degrees(ab)
+        D = min(max(math.hypot(dz, dyp), 0.08), L_UP + L_FORE - 1e-3)
+        a = math.atan2(dz, -dyp)
+        b = math.acos(min(1, max(-1, (L_UP ** 2 + D ** 2 - L_FORE ** 2) / (2 * L_UP * D))))
+        c = math.acos(min(1, max(-1, (L_UP ** 2 + L_FORE ** 2 - D ** 2) / (2 * L_UP * L_FORE))))
+        self.p[f'upper_{side}'].rotation_x = SX * math.degrees(a - b)
+        self.p[f'elbow_{side}'].rotation_x = SX * math.degrees(math.pi - c)
+
+    def _head_point(self, x, y, z):
+        return Vec3(*scene.getRelativePoint(self.p['head'], Point3(x, y, z)))
+
+    # ------------------------------------------------------------ поза
     def _pose(self, dt):
-        u, rch, cov = self.unfold, self.reach, self.cover
-        sp = min(self._speed / 3.0, 1.0)
-        self._phase += dt * (2.2 + 4.5 * sp) * (0.2 + sp) * 2
-        s = math.sin(self._phase)
         p = self.p
+        sit = self.sit * self.sit * (3 - 2 * self.sit)
+        u = self.unfold
+        sp = min(self._speed / 2.7, 1.0)
+        self._phase += dt * (2.0 + 4.0 * sp) * (0.25 + sp) * 2
+        s = math.sin(self._phase)
 
-        bend1 = 24 * (1 - u) + 10 * sp + 8 * self._lunge + 12 * cov
-        bend2 = 30 * (1 - u) + 6 * sp + 6 * self._lunge + 10 * cov
+        # таз: сидя — на ступеньке, стоя — над ступнями
+        p['pelvis'].y = _lerp(PELVIS_Y, SEAT_H + 0.08, sit)
+        if self._seated_origin:
+            p['pelvis'].z = 0.45 * (1 - sit)
+            if self.sit < 0.02 and self.state != 'rise':
+                # встала: переносим корень вперёд, дальше идёт от ступней
+                self.position += self.forward * 0.45
+                p['pelvis'].z = 0.0
+                self._seated_origin = False
+        else:
+            p['pelvis'].z = 0.0
+
+        # платье пересчитываем, только когда меняется посадка
+        if abs(self.sit - self._skirt_sit) > 0.01:
+            self._skirt_sit = self.sit
+            m = p['skirt'].model
+            m.vertices = [tuple(map(float, v)) for v in skirt_vertices(self.sit)]
+            m.generate()
+
+        bend1 = _lerp(20 * (1 - u) + 8 * sp + 6 * self._lunge, 12, sit) + math.sin(self._t * 0.6) * 2 * sit
+        bend2 = _lerp(26 * (1 - u) + 6 * sp + 6 * self._lunge, 20, sit) + 10 * self.eyes
         p['spine1'].rotation_x = bend1
-        p['spine1'].rotation_z = s * 3 * (0.3 + sp)                 # покачивается при шарканье
+        p['spine1'].rotation_z = s * 2.5 * (0.3 + sp) * (1 - sit)
         p['spine2'].rotation_x = bend2
         tilt_total = bend1 + bend2
-        p['neck'].rotation_x = -8 * (1 - u) + 20 * self._lunge          # шея идёт вдоль сгорбленной спины
-        p['neck_slide'].y = NECK_MAX * max(0.0, (u - 0.3) / 0.7) + 0.12 * self._lunge
-        head_pitch = -(tilt_total + p['neck'].rotation_x) + 6
-        p['head'].rotation_x = head_pitch
+        p['neck'].rotation_x = -6 * (1 - u) + 18 * self._lunge
+        p['neck_slide'].y = NECK_MAX * max(0.0, (u - 0.3) / 0.7) + 0.08 * self._lunge
+        p['head'].rotation_x = -(tilt_total + p['neck'].rotation_x) + 4 + self._pitch_head + 12 * self.eyes
         p['head'].rotation_y = self._yaw_head
-        p['head'].rotation_z = self._tilt + math.sin(self._t * 0.9) * 2
+        p['head'].rotation_z = self._tilt + math.sin(self._t * 0.8) * 1.5
 
+        # ноги
         for side, sx in (('R', 1), ('L', -1)):
-            swing = s * sx * (8 + 18 * sp) * (1 - rch)
-            p[f'shoulder_{side}'].rotation_x = -tilt_total - swing - rch * 82 - cov * 75
-            p[f'shoulder_{side}'].rotation_z = sx * (-6 + 4 * rch) + sx * cov * 28
-            p[f'elbow_{side}'].rotation_x = -12 - 8 * sp + rch * 6 - cov * 105
-            # шаркающие шаги: ступни почти не отрываются
-            p[f'hip_{side}'].rotation_x = s * sx * (6 + 26 * sp)
-            p[f'knee_{side}'].rotation_x = (8 + 14 * sp) + max(0, -s * sx) * 18 * sp
-        # авоська и вязание висят отвесно и раскачиваются
-        for name in ('avoska', 'knitting'):
-            p[name].world_rotation = Vec3(s * 8 * (0.3 + sp), self.world_rotation_y, math.cos(self._phase) * 5 * sp)
+            walk_hip = s * sx * (5 + 24 * sp)
+            walk_knee = (6 + 12 * sp) + max(0, -s * sx) * 16 * sp
+            p[f'hip_{side}'].rotation_x = _lerp(walk_hip, -88, sit)
+            p[f'knee_{side}'].rotation_x = _lerp(walk_knee, 90, sit)
 
-        for sx in (1, -1):
-            p[f'lens_{sx}'].set_shader_input('glow', self.glow)
-            p[f'lens_{sx}'].set_shader_input('blind', self.blind)
+        # руки: цель кисти = смесь «висит» / «тянется» / «у лица»
+        fz = 0.015 + 0.09
+        for side, sx in (('R', 1), ('L', -1)):
+            sh = Vec3(*scene.getRelativePoint(p[f'shoulder_{side}'], Point3(0, 0, 0)))
+            fwd = Vec3(*scene.getRelativeVector(self, Vec3(0, 0, 1))).normalized()
+            right = Vec3(*scene.getRelativeVector(self, Vec3(1, 0, 0))).normalized()
+            swing = s * sx * 0.12 * (0.3 + sp) * (1 - self.reach)
+            hang = sh + Vec3(0, -0.82, 0) + right * sx * 0.05 + fwd * (0.06 + swing)
+            reach = sh + fwd * 0.8 + Vec3(0, -0.05 + 0.08 * self._lunge, 0) + right * sx * -0.06
+            y_face = _lerp(0.045 - 0.065, 0.111 - 0.06, self.eyes)     # запястья у подбородка
+            face = self._head_point(sx * 0.05, y_face, fz + 0.035)
+            tgt = _lerp(_lerp(hang, reach, self.reach), face, self.cover)
+            self._solve_arm(side, tgt)
+            # ладонь: у лица — к лицу пальцами вверх; висит — к бедру пальцами вниз
+            aim = p[f'hand_aim_{side}']
+            ap = Vec3(*aim.world_position)
+            head_up = Vec3(*scene.getRelativeVector(p['head'], Vec3(0, 1, 0))).normalized()
+            head_fwd = Vec3(*scene.getRelativeVector(p['head'], Vec3(0, 0, 1))).normalized()
+            head_right = Vec3(*scene.getRelativeVector(p['head'], Vec3(1, 0, 0))).normalized()
+            d_cover = (-head_fwd - head_right * sx * 0.2).normalized()     # ладонь смотрит на лицо
+            d_hang = (-right * sx + fwd * 0.2).normalized()
+            d_reach = Vec3(0, -1, 0)
+            d = _lerp(_lerp(d_hang, d_reach, self.reach), d_cover, self.cover).normalized()
+            up = _lerp(_lerp(Vec3(0, -1, 0), fwd, self.reach), (head_up + head_right * sx * _lerp(0.42, 0.25, self.eyes)).normalized(), self.cover).normalized()
+            NodePath.lookAt(aim, scene, Point3(*(ap + d)), up)
 
     def update(self):
         dt = self.fixed_dt or min(utime.dt, 1 / 20)
