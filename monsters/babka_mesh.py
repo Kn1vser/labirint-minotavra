@@ -258,4 +258,34 @@ def build_babka(seed=4):
                    mesh=loft([(-0.07, 0.052, 0.058, 0, -0.012), (0.0, 0.058, 0.058, 0, -0.022), (0.12, 0.056, 0.046, 0, -0.04),
                               (0.2, 0.042, 0.036, 0, -0.045)], axis='z', rings=14, seg=18, round_start=0.035, round_end=0.035,
                              noise=0.06, noise_scale=16, seed=seed)))
+    # ---- снег и лёд прямо на ней
+    def snowcap(rx, ry, rz, seed_, flat=0.35):
+        m = ellipsoid(rx, ry, rz, rings=14, seg=22, noise=0.35, seed=seed_)
+        v = m.vertices
+        v[:, 1] = np.maximum(v[:, 1], -ry * flat)            # плоское дно, ложится на ткань
+        m.vertices = v
+        m.normals = vertex_normals(m.vertices, m.triangles)
+        if np.einsum('ij,ij->i', m.normals, m.vertices - m.vertices.mean(0)).mean() < 0:
+            m.normals = -m.normals
+        return m
+
+    P(PartSpec('snow_head', 'head', (0, 0.222, -0.03), rot=(-10, 0, 0), mesh=snowcap(0.058, 0.016, 0.07, 31), kind='snowpack'))
+    for side, sx in (('R', 1), ('L', -1)):
+        P(PartSpec(f'snow_shoulder_{side}', 'spine2', (sx * 0.17, 0.315, -0.04), rot=(0, 0, sx * -22),
+                   mesh=snowcap(0.075, 0.02, 0.095, 40 + sx), kind='snowpack'))
+    P(PartSpec('snow_back', 'spine2', (0, 0.22, -0.235), rot=(-62, 0, 0), mesh=snowcap(0.14, 0.022, 0.1, 52), kind='snowpack'))
+    P(PartSpec('snow_back2', 'spine2', (0, 0.02, -0.29), rot=(-78, 0, 0), mesh=snowcap(0.16, 0.02, 0.08, 53), kind='snowpack'))
+
+    def icicle(L, r, seed_):
+        return loft([(-L, 0.0015, 0.0015, 0, 0), (-L * 0.55, r * 0.45, r * 0.45, 0, 0), (-0.01, r, r, 0, 0), (0.0, r * 1.2, r * 1.2, 0, 0)],
+                     rings=8, seg=8, noise=0.3, noise_scale=60, seed=seed_)
+    # по краю платка (сзади и с боков)
+    for i, a in enumerate(np.linspace(math.radians(195), math.radians(345), 13)):
+        L = rng.uniform(0.04, 0.14)
+        P(PartSpec(f'icicle_shawl_{i}', 'spine2', (0.29 * math.cos(a), -0.58, 0.26 * math.sin(a) - 0.01),
+                   mesh=icicle(L, rng.uniform(0.005, 0.009), 60 + i), kind='ice'))
+    # под подбородком, с края капюшона
+    for i, x in enumerate((-0.05, -0.02, 0.025, 0.055)):
+        P(PartSpec(f'icicle_hood_{i}', 'head', (x, -0.06 - abs(x) * 0.6, 0.06 - abs(x) * 0.5),
+                   mesh=icicle(rng.uniform(0.025, 0.06), 0.004, 70 + i), kind='ice'))
     return _finalize(parts)

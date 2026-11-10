@@ -21,7 +21,7 @@ from ursina import Entity, Mesh, Vec3, Vec4, camera, scene, time as utime
 from ursina.shaders import unlit_shader
 
 from .babka_mesh import NECK_MAX, PELVIS_Y, SEAT_H, build_babka, skirt_vertices
-from .babka_shaders import COLD, FRAYED, MATERIALS, NO_SNOW, WINDY, cloth_shader
+from .babka_shaders import COLD, FRAYED, MATERIALS, NO_SNOW, TINTS, WINDY, cloth_shader
 from .frost_mimic import init_scene_uniforms
 
 L_UP, L_FORE = 0.43, 0.43
@@ -98,6 +98,8 @@ class Babka(Entity):
                 e.set_shader_input('fray', 1.0 if s.name in FRAYED else 0.0)
                 e.set_shader_input('part_offset', Vec3(*s.body_pos))
                 e.set_shader_input('wind', WINDY.get(s.name, 0.0))
+                tint = TINTS['stocking'] if s.name.startswith('shin') else TINTS.get(s.kind, (1, 1, 1))
+                e.set_shader_input('tint', Vec3(*tint))
                 e.set_shader_input('snow_mask', 0.0 if s.kind in NO_SNOW else (0.4 if s.kind == 'skin' else 1.0))
                 e.set_shader_input('cold_flush', COLD.get(s.name, 0.9 if 'dist_' in s.name else 0.5 if 'prox_' in s.name else 0.0))
             e.name = s.name
