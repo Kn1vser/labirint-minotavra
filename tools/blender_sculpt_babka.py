@@ -278,16 +278,19 @@ def build_materials():
 
 
 # ------------------------------------------------------------------ сцена
-def build_scene(groups, M, with_step):
+def build_scene(groups, M, with_step, voxel_scale=1.0):
     col = bpy.context.scene.collection
     objs = []
     for gname, g in groups.items():
         kind = g['kind']
         obj = make_object(gname, g['parts'], col)
+        if '--mem' in sys.argv:
+            import resource
+            print('MEM', gname, kind, resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024, 'MB', flush=True)
         if gname == 'face':
-            sculpt_organic(obj, 0.0009, 0.00035)
+            sculpt_organic(obj, 0.0009 * voxel_scale, 0.00035)
         elif gname.startswith('hand_'):
-            sculpt_organic(obj, 0.0008, 0.0003)
+            sculpt_organic(obj, 0.0008 * voxel_scale, 0.0003)
         elif kind in ('wool', 'linen'):
             sculpt_cloth(obj, 0.006 if kind == 'wool' else 0.003, 0.006 if kind == 'wool' else 0.004)
         elif kind == 'snowpack':
@@ -421,7 +424,7 @@ def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     groups = load_pose(OUT / f'pose_{pose}.npz')
     M = build_materials()
-    build_scene(groups, M, with_step=(pose == 'sit'))
+    build_scene(groups, M, with_step=(pose == 'sit'), voxel_scale=1.0 if pose == 'sit' else 1.8)  # стоя лицо мелкое в кадре
     hc = head_center(groups)
     if pose == 'sit':
         setup_render(900, 1200)
