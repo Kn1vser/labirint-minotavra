@@ -72,3 +72,29 @@ b.state                         # sit / rise / patrol / notice / chase / grab / 
 | `monsters/babka.py` | поведение, IK рук (ладони на лицо), посадка/подъём |
 | `monsters/porch.py` | крыльцо избы с тёмным проёмом |
 | `monsters/cinema.py` | плёночная постобработка, керосиновая лампа, пыль и туман |
+
+
+## Скульпт в Blender
+
+`tools/blender_sculpt_babka.py` — скриптовый скульпт-проход в Blender (через модуль `bpy`) и рендер в Cycles:
+руки и лицо сплавлены voxel-remesh в цельные формы и сглажены (нет швов «трубок»), мелкая скульптура
+дисплейсментом (поры, морщинки), у тканей настоящая толщина и складки, материалы с подповерхностным
+рассеянием кожи, ворсом шерсти, снегом и льдом.
+
+![blender_hero](blender_hero.png)
+![blender_face](blender_face.png)
+
+```bash
+pip install bpy                                   # нужен Python 3.13 (у bpy нет сборки под 3.14)
+python tools/export_babka_pose.py sit             # поза из движка -> docs/babka/pose_sit.npz
+python tools/export_babka_pose.py stand
+python tools/blender_sculpt_babka.py sit --save   # рендеры + babka_sculpt.blend (полный, ~100 МБ) + babka_sculpt_lite.glb
+python tools/blender_sculpt_babka.py stand        # виды спереди / 3/4 / сбоку / сзади
+```
+
+`babka_sculpt_lite.glb` (в репозитории) — прореженная копия, открывается в Blender, в любом просмотрщике glTF
+и в Ursina (`Entity(model='docs/babka/babka_sculpt_lite.glb')`). Полный `.blend` в репозиторий не кладётся (слишком
+большой) — его создаёт команда выше с `--save`.
+
+Это скриптовый проход, а не ручная лепка кистью: он убирает «конструктор из трубок» и добавляет фактуру,
+но для уровня AAA следующий шаг — художник докручивает этот `.blend` в Sculpt Mode.

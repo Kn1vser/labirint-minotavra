@@ -1,3 +1,6 @@
 venv/
 __pycache__/
 *.obj
+docs/babka/*.blend
+docs/babka/*.blend1
+docs/babka/pose_*.npz
