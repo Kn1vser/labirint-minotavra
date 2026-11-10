@@ -156,8 +156,10 @@ def init_scene_uniforms():
     _scene_ready = True
 
 
-def set_environment(light_dir=None, light_color=None, fog_color=None, fog_density=None):
+def set_environment(light_dir=None, light_color=None, fog_color=None, fog_density=None, snow=None):
     init_scene_uniforms()
+    if snow is not None:
+        NodePath.set_shader_input(scene, 'snow', float(snow))
     for k, v in (('light_dir', light_dir), ('light_color', light_color), ('fog_color', fog_color)):
         if v is not None:
             NodePath.set_shader_input(scene, k, Vec3(*v))

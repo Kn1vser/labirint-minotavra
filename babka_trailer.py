@@ -20,15 +20,15 @@ from monsters.porch import build_porch
 from taiga_demo import build_taiga
 
 app = Ursina(title='Бабка — трейлер', fullscreen='--fullscreen' in sys.argv, development_mode=False)
-FOG = (0.035, 0.04, 0.05)
-build_taiga(clear=10.0)
-build_porch(position=(0, 0, 0))
-set_environment(light_dir=(0.5, 0.55, 0.55), light_color=(0.50, 0.56, 0.70), fog_color=FOG, fog_density=0.06)
+FOG = (0.06, 0.07, 0.095)
+build_taiga(clear=10.0, winter=True)
+build_porch(position=(0, 0, 0), icicles=True)
+set_environment(light_dir=(0.5, 0.55, 0.55), light_color=(0.52, 0.60, 0.80), fog_color=FOG, fog_density=0.055)
 NodePath.set_shader_input(scene, 'rim_dir', Vec3(-0.5, 0.6, -0.7))
 NodePath.set_shader_input(scene, 'rim_color', Vec3(0.30, 0.36, 0.52))
 window.color = color.rgb(*FOG)
 KeroseneLamp(position=(0.62, 0.0, 0.42), power=5.0)
-Atmosphere(center=(0, 0, 0.8), radius=5)
+Atmosphere(center=(0, 0, 0.8), radius=5, motes=30, snowfall=650)
 film = FilmLook(grade='cinema', letterbox=True, aperture=1.2)
 camera.fov = 32
 title = Text('', origin=(0, 0), y=-0.3, scale=1.6, color=color.rgb(0.92, 0.88, 0.8))
@@ -79,7 +79,7 @@ def once(name):
 def shots():
     b = S['b']
     return [
-        (0.0, 5.0, lambda k: shot(Vec3(1.6 - 0.9 * k, 1.5, 8.0 - 2.6 * k), Vec3(0, 1.0, 0), b)),
+        (0.0, 5.0, lambda k: shot(Vec3(2.6 - 1.6 * k, 2.0 - 0.5 * k, 10.0 - 4.0 * k), Vec3(0, 1.0, 0), b)),
         (5.0, 9.5, lambda k: shot(head() + Vec3(0.25 - 0.1 * k, 0.0, 1.05 - 0.3 * k), head() - Vec3(0, 0.03, 0), b.p['eye_1'])),
         (9.5, 12.0, lambda k: shot(head() + Vec3(-0.35 + 0.1 * k, -0.08, 0.5), head() - Vec3(0, 0.08, -0.06), b.p['hand_R'])),
         (12.0, 15.5, lambda k: shot(Vec3(1.1, 0.5, 3.6), head() - Vec3(0, 0.25, 0), b.p['head'])),

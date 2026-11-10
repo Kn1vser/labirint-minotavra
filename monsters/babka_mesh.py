@@ -140,7 +140,7 @@ def build_babka(seed=4):
                   (0.42, 0.06, 0.06, 0, -0.01)], rings=34, seg=56, shape=_cloth_folds(6, 0.09), noise=0.06,
                  noise_scale=5, seed=seed + 2)
     shawl = cut(shawl, lambda c: (c[:, 2] > 0.02) & (np.abs(c[:, 0]) < 0.07 + np.clip(0.3 - c[:, 1], 0, 1) * 0.35))
-    P(PartSpec('shawl', 'spine2', (0, 0, 0), mesh=shawl, kind='linen'))
+    P(PartSpec('shawl', 'spine2', (0, 0, 0), mesh=shawl, kind='wool'))
 
     # тонкая морщинистая шея (вытягивается, когда заметила) и голова
     P(PartSpec('neck', 'spine2', (0, 0.32, 0.0), kind='none'))
@@ -181,7 +181,7 @@ def build_babka(seed=4):
                 noise_scale=8, seed=seed + 3)
     hood = cut(hood, lambda c: (c[:, 2] > 0.0) & (((c[:, 0] / 0.066) ** 2 + ((c[:, 1] - 0.085) / 0.1) ** 2 < 1)
                                                    | ((c[:, 1] < 0.02) & (np.abs(c[:, 0]) < 0.055 + (0.02 - c[:, 1]) * 0.6))))
-    P(PartSpec('hood', 'head', (0, 0, 0), mesh=hood, kind='linen'))
+    P(PartSpec('hood', 'head', (0, 0, 0), mesh=hood, kind='wool'))
     ky = np.array([-0.26, -0.13, -0.03, 0.07, 0.15, 0.2, 0.24])
     krx = np.array([0.24, 0.17, 0.125, 0.112, 0.104, 0.088, 0.05])
     krz = np.array([0.21, 0.16, 0.13, 0.125, 0.116, 0.098, 0.058])
@@ -192,7 +192,7 @@ def build_babka(seed=4):
         rx, rz, cz = np.interp(y, ky, krx), np.interp(y, ky, krz), np.interp(y, ky, kcz)
         z = cz + rz * math.sqrt(max(1 - (x / rx) ** 2, 0.0))
         rim.append((x * 1.04, y, z + 0.003))
-    P(PartSpec('hood_rim', 'head', (0, 0, 0), mesh=tube_path(rim, [0.0065] * len(rim), seg=8), kind='linen'))
+    P(PartSpec('hood_rim', 'head', (0, 0, 0), mesh=tube_path(rim, [0.009] * len(rim), seg=8), kind='wool'))
 
     # руки: длинные, в широких рукавах; кисть на отдельном узле для наведения ладоней на лицо
     for side, sx in (('R', 1), ('L', -1)):
@@ -246,12 +246,16 @@ def build_babka(seed=4):
                    mesh=loft([(0.04, 0.07, 0.07, 0, 0), (0.0, 0.075, 0.077, 0, 0), (-0.47, 0.05, 0.052, 0, 0)],
                              rings=12, seg=16, round_start=0.04, seed=seed)))
         P(PartSpec(f'knee_{side}', f'hip_{side}', (0, -THIGH, 0), kind='none'))
-        P(PartSpec(f'shin_{side}', f'knee_{side}', (0, 0, 0), kind='skin',
-                   mesh=loft([(0.03, 0.045, 0.047, 0, 0), (0.0, 0.046, 0.048, 0, 0), (-0.44, 0.03, 0.032, 0, 0)],
+        P(PartSpec(f'shin_{side}', f'knee_{side}', (0, 0, 0), kind='wool',          # шерстяные чулки
+                   mesh=loft([(0.03, 0.047, 0.049, 0, 0), (0.0, 0.048, 0.05, 0, 0), (-0.30, 0.036, 0.038, 0, 0)],
                              rings=12, seg=16, round_start=0.03, seed=seed)))
+        P(PartSpec(f'valenok_{side}', f'knee_{side}', (0, 0, 0), kind='felt',          # голенище валенка
+                   mesh=loft([(-0.47, 0.056, 0.058, 0, 0), (-0.32, 0.058, 0.06, 0, 0), (-0.2, 0.064, 0.066, 0, 0),
+                              (-0.17, 0.068, 0.07, 0, 0), (-0.16, 0.05, 0.05, 0, 0)], rings=16, seg=20, noise=0.05,
+                             noise_scale=14, seed=seed + 7)))
         P(PartSpec(f'ankle_{side}', f'knee_{side}', (0, -SHIN, 0), kind='none'))
-        P(PartSpec(f'shoe_{side}', f'ankle_{side}', (0, 0, 0), kind='leather',
-                   mesh=loft([(-0.06, 0.045, 0.06, 0, -0.01), (0.0, 0.05, 0.055, 0, -0.02), (0.12, 0.048, 0.04, 0, -0.04),
-                              (0.2, 0.035, 0.03, 0, -0.045)], axis='z', rings=14, seg=18, round_start=0.03, round_end=0.03,
-                             noise=0.1, noise_scale=20, seed=seed)))
+        P(PartSpec(f'shoe_{side}', f'ankle_{side}', (0, 0, 0), kind='felt',
+                   mesh=loft([(-0.07, 0.052, 0.058, 0, -0.012), (0.0, 0.058, 0.058, 0, -0.022), (0.12, 0.056, 0.046, 0, -0.04),
+                              (0.2, 0.042, 0.036, 0, -0.045)], axis='z', rings=14, seg=18, round_start=0.035, round_end=0.035,
+                             noise=0.06, noise_scale=16, seed=seed)))
     return _finalize(parts)

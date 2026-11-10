@@ -24,16 +24,16 @@ from panda3d.core import NodePath, Point3
 from ursina import scene
 from taiga_demo import build_taiga
 
-NIGHT_FOG = (0.06, 0.07, 0.10)
+NIGHT_FOG = (0.06, 0.07, 0.095)
 
 app = Ursina(title='Бабка', development_mode=False)
-build_taiga(clear=9.0)
-build_porch(position=(0, 0, 9), rotation_y=180)
-set_environment(light_dir=(0.5, 0.55, -0.55), light_color=(0.48, 0.54, 0.68), fog_color=NIGHT_FOG, fog_density=0.07)
+build_taiga(clear=9.0, winter=True)
+build_porch(position=(0, 0, 9), rotation_y=180, icicles=True)
+set_environment(light_dir=(0.5, 0.55, -0.55), light_color=(0.52, 0.60, 0.80), fog_color=NIGHT_FOG, fog_density=0.06)
 NodePath.set_shader_input(scene, 'rim_dir', Vec3(-0.5, 0.6, 0.7))
 NodePath.set_shader_input(scene, 'rim_color', Vec3(0.30, 0.36, 0.52))
 lamp = KeroseneLamp(position=(-0.62, 0.0, 8.58), power=5.0)
-Atmosphere(center=(0, 0, 8.2), radius=6)
+Atmosphere(center=(0, 0, 8.2), radius=7, motes=30, snowfall=800)
 window.color = color.rgb(*NIGHT_FOG)
 
 player = Entity(position=(0, 0, -4))

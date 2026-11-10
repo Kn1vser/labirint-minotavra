@@ -45,13 +45,17 @@ void main(){
 
 LIGHT = '''
 vec3 shade(vec3 alb, vec3 N, vec3 V, float rough, float ao){
+    float sc = snow_cover(N, g_wpos);
+    alb = mix(alb, snow_albedo(g_wpos), sc);
+    ao = mix(ao, 1.0, sc*0.6);
     vec3 L = normalize(light_dir);
     float diff = clamp(dot(N, L), 0.0, 1.0);
     // небо сверху голубоватое, снизу отражённый тёплый свет земли
     vec3 amb = mix(vec3(0.10,0.09,0.07), vec3(0.20,0.25,0.33), N.y*0.5+0.5);
     vec3 H = normalize(L + V);
     float spec = pow(clamp(dot(N, H), 0.0, 1.0), mix(80.0, 8.0, rough)) * (1.0 - rough) * 0.5;
-    return alb * (light_color * diff + amb + lamp_light(g_wpos, N)) * ao + light_color * spec * ao + alb * rim_light(N, V);
+    return alb * (light_color * diff + amb + lamp_light(g_wpos, N)) * ao + light_color * spec * ao + alb * rim_light(N, V)
+         + (light_color + lamp_light(g_wpos, N)) * snow_sparkle(g_wpos, V) * sc * 1.5;
 }
 '''
 
@@ -137,6 +141,13 @@ void main(){
         vec3 alb = vec3(0.62,0.68,0.52) * (0.85 + 0.3*vnoise(p*200.0));
         col = shade(alb, N, V, 1.0, 1.0) + alb * light_color * 0.25;
     }
+    else if(material == 7){                  // ---- лёд (сосульки)
+        float fres = pow(1.0 - ndv, 3.0);
+        vec3 alb = mix(vec3(0.55,0.68,0.80), vec3(0.85,0.92,1.0), vnoise(v_local*vec3(40.0,6.0,40.0)));
+        col = alb * (light_color*0.5 + vec3(0.12,0.15,0.2) + lamp_light(v_wpos, N)) + light_color * fres * 0.6;
+        vec3 H = normalize(normalize(light_dir) + V);
+        col += light_color * pow(clamp(dot(N, H), 0.0, 1.0), 90.0) * 1.2;
+    }
     else if(material == 6){                  // ---- шляпка подосиновика
         vec3 alb = mix(vec3(0.62,0.22,0.06), vec3(0.80,0.36,0.10), fbm(p*20.0));
         alb *= 0.85 + 0.25*smoothstep(0.0, 0.05, v_local.y - 0.1);
@@ -206,6 +217,14 @@ void main(){
     float berry = smoothstep(0.08, 0.04, voronoi(vec3(p.xz*30.0, 2.0)).x) * step(0.8, bv.z) * smoothstep(0.4, 0.2, bv.x);
     alb = mix(alb, vec3(0.7,0.06,0.08), berry);
     alb *= 0.7 + 0.45*fine;
+    if(snow > 0.0){
+        // сугробы: медленные волны наста, под ёлками — проталины с хвоей
+        float drift = fbm(vec3(p.xz*0.18, 3.0));
+        float melt = smoothstep(0.78, 0.86, fbm(vec3(p.xz*0.6, 8.0))) * 0.8;
+        vec3 sn = snow_albedo(p) * (0.82 + 0.25*drift);
+        sn = mix(sn, sn*vec3(0.80,0.86,1.0), smoothstep(0.55, 0.3, drift));   // голубые тени в низинах
+        alb = mix(alb, sn, snow * (1.0 - melt));
+    }
     vec3 col = shade(alb, N, V, 1.0, 0.8 + 0.2*mid);
     frag = vec4(apply_fog(col, p), 1.0);
 }
@@ -220,5 +239,5 @@ nature_shader = _make('kochkar_nature', NATURE_FRAG)
 eye_shader = _make('kochkar_eye', EYE_FRAG)
 ground_shader = _make('taiga_ground', GROUND_FRAG)
 
-MATERIAL = dict(moss=0, wood=1, roots=1, needles=2, lichen=3, plain=4, stem=4, birch=5, cap=6)
+MATERIAL = dict(moss=0, wood=1, roots=1, needles=2, lichen=3, plain=4, stem=4, birch=5, cap=6, ice=7)
 SWAY = dict(needles=0.5, lichen=1.0, roots=0.6)

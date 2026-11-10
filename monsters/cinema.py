@@ -172,9 +172,20 @@ class KeroseneLamp(Entity):
 class Atmosphere(Entity):
     """Пыль, плавающая в свете, и полосы низового тумана."""
 
-    def __init__(self, center=(0, 0, 0), radius=5.0, motes=90, fog_puffs=26, **kwargs):
+    def __init__(self, center=(0, 0, 0), radius=5.0, motes=90, fog_puffs=26, snowfall=0, **kwargs):
         super().__init__(position=center, **kwargs)
         self.radius = radius
+        # снегопад: хлопья падают и сносятся ветром, вокруг центра
+        self.flakes = []
+        for _ in range(snowfall):
+            e = Entity(parent=self, model='quad', texture='radial_gradient', billboard=True, shader=unlit_shader,
+                       position=(random.uniform(-radius, radius), random.uniform(0, 4.5), random.uniform(-radius, radius)),
+                       scale=random.uniform(0.012, 0.035), color=Vec4(0.95, 0.97, 1.0, random.uniform(0.4, 0.9)))
+            e.setTransparency(TransparencyAttrib.M_alpha)
+            e.set_depth_write(False)
+            e.seed = random.uniform(0, 100)
+            e.fall = random.uniform(0.35, 0.8)
+            self.flakes.append(e)
         self.motes = []
         for _ in range(motes):
             e = Entity(parent=self, model='quad', texture='radial_gradient', billboard=True, shader=unlit_shader,
@@ -209,6 +220,17 @@ class Atmosphere(Entity):
                 e.y = 2.6
         for e in self.fog:
             e.x += math.sin(t * 0.05 + e.seed) * dt * 0.08
+        r = self.radius
+        gust = 0.35 + 0.25 * math.sin(t * 0.4)
+        for e in self.flakes:
+            s = e.seed
+            e.position += Vec3(gust + math.sin(t * 1.3 + s) * 0.15, -e.fall, math.cos(t * 1.1 + s) * 0.12) * dt
+            if e.y < 0:
+                e.y = 4.5
+                e.x = random.uniform(-r, r)
+                e.z = random.uniform(-r, r)
+            if e.x > r:
+                e.x -= 2 * r
 
 
 def _mesh(md):

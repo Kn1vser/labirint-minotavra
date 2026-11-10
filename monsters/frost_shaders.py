@@ -58,6 +58,23 @@ vec3 lamp_light(vec3 wpos, vec3 N){
     float ndl = clamp(dot(N, normalize(d)) * 0.85 + 0.15, 0.0, 1.0);
     return lamp_color * lamp_power * ndl / (1.0 + dist2 * 0.9);
 }
+// снег: копится на поверхностях, обращённых вверх
+uniform float snow;          // 0 — лето/осень, 1 — снежная тайга (на всю сцену)
+uniform float snow_mask;     // на части: 1 — снег ложится, 0 — нет (глаза, лицо)
+float snow_cover(vec3 N, vec3 wpos){
+    float k = snow * snow_mask;
+    if(k <= 0.0) return 0.0;
+    float n = vnoise(wpos*6.0)*0.6 + vnoise(wpos*31.0)*0.4;
+    return smoothstep(0.22, 0.6, N.y + (n - 0.5)*0.55) * k;
+}
+vec3 snow_albedo(vec3 wpos){
+    return mix(vec3(0.74,0.79,0.88), vec3(0.95,0.97,1.0), vnoise(wpos*45.0)*0.6 + vnoise(wpos*7.0)*0.4);
+}
+float snow_sparkle(vec3 wpos, vec3 V){
+    float h = fract(sin(dot(floor(wpos*260.0), vec3(12.9898,78.233,37.719))) * 43758.5453);
+    float tw = 0.5 + 0.5*sin(dot(V, vec3(41.0,23.0,37.0)) + h*30.0);
+    return step(0.985, h) * tw;
+}
 vec3 rim_light(vec3 N, vec3 V){
     float r = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 3.0) * clamp(dot(N, normalize(rim_dir)) * 0.5 + 0.5, 0.0, 1.0);
     return rim_color * r;
@@ -454,4 +471,7 @@ GLOBAL_DEFAULTS = dict(
     lamp_power=0.0,
     rim_dir=(0, 0.3, -1),
     rim_color=(0, 0, 0),
+    snow=0.0,
+    snow_mask=1.0,
+    cold_flush=0.0,
 )

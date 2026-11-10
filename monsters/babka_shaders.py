@@ -45,6 +45,9 @@ void main(){
 
 LIGHT = '''
 vec3 shade(vec3 alb, vec3 N, vec3 V, float gloss, float ao){
+    float sc = snow_cover(N, g_wpos);
+    alb = mix(alb, snow_albedo(g_wpos), sc);
+    gloss = mix(gloss, 0.0, sc);
     vec3 L = normalize(light_dir);
     float diff = clamp(dot(N, L), 0.0, 1.0);
     vec3 amb = mix(vec3(0.05,0.05,0.05), vec3(0.11,0.12,0.14), N.y*0.5+0.5);
@@ -53,7 +56,8 @@ vec3 shade(vec3 alb, vec3 N, vec3 V, float gloss, float ao){
     vec3 lamp = lamp_light(g_wpos, N);
     vec3 Hl = normalize(normalize(lamp_pos - g_wpos) + V);
     float specl = pow(clamp(dot(N, Hl), 0.0, 1.0), mix(8.0, 70.0, gloss)) * gloss;
-    return (alb * (light_color*diff + amb + lamp) + light_color*spec*0.4 + lamp*specl*0.6) * ao + alb * rim_light(N, V) * 1.4;
+    return (alb * (light_color*diff + amb + lamp) + light_color*spec*0.4 + lamp*specl*0.6) * ao + alb * rim_light(N, V) * 1.4
+         + (light_color + lamp) * snow_sparkle(g_wpos, V) * sc * 1.5;
 }
 '''
 
@@ -61,6 +65,7 @@ CLOTH_FRAG = '''#version 140
 ''' + NOISE + COMMON_UNIFORMS + LIGHT + '''
 uniform int material;
 uniform float fray;          // 1 — рвать край ткани по uv.y
+uniform float cold_flush;    // покраснение от мороза (нос, пальцы)
 in vec3 v_obj; in vec3 v_local; in vec3 v_wpos; in vec3 v_wnrm; in vec3 v_onrm; in vec2 v_uv;
 out vec4 frag;
 
@@ -92,6 +97,7 @@ void main(){
         float forehead = material == 1 ? smoothstep(0.12, 0.17, lp.y) : 0.0;
         vec3 alb = skin_albedo(p, lp, forehead);
         float ao = material == 1 ? v_uv.x : 1.0;
+        alb = mix(alb, alb*vec3(1.28,0.78,0.78) + vec3(0.04,0.0,0.0), cold_flush * snow * 0.75);
         if(material == 1){
             // «гусиные лапки» у глаз и складки на переносице
             for(int k=0; k<2; k++){
@@ -137,6 +143,10 @@ void main(){
         alb = mix(alb, vec3(0.62,0.58,0.50), stitch*0.8);
         alb *= 1.0 - seam*0.25;
         alb *= weave;
+        // иней по краю ткани и снег, налипший на подол
+        float rime = smoothstep(0.22, 0.03, v_uv.y) * fray * (0.4 + 0.6*vnoise(p*90.0));
+        float caked = smoothstep(0.45, 0.05, v_wpos.y) * (0.5 + 0.5*fbm(p*14.0));
+        alb = mix(alb, vec3(0.86,0.9,0.96), clamp((rime*0.75 + caked*0.85) * snow, 0.0, 0.9));
         if(inside) alb *= 0.45;
         col = shade(alb, N, V, 0.03, 1.0);
         col += alb * light_color * pow(1.0 - ndv, 3.0) * 0.18;
@@ -157,7 +167,29 @@ void main(){
     }
     else if(material == 4){                        // седые пряди
         vec3 alb = vec3(0.62,0.60,0.56) * (0.8 + 0.3*vnoise(p*300.0));
+        alb = mix(alb, vec3(0.92,0.95,1.0), snow * smoothstep(0.4, 0.8, vnoise(p*160.0)) * 0.8);   // иней
         col = shade(alb, N, V, 0.3, 0.9);
+    }
+    else if(material == 7){                        // пуховый платок: шерстяная вязка, пух
+        if(fray > 0.5){
+            float edge = 0.03 + vnoise(vec3(v_uv.x*120.0, 0.0, 4.0))*0.04;
+            if(v_uv.y < edge) discard;
+        }
+        float rows = fract(lp.y*90.0 + abs(fract(atan(lp.x, lp.z)*16.0) - 0.5)*0.9);
+        float knit = 0.82 + 0.18*smoothstep(0.1, 0.5, abs(rows - 0.5)*2.0);
+        vec3 alb = mix(vec3(0.42,0.40,0.37), vec3(0.58,0.56,0.52), fbm(p*8.0)) * knit;
+        alb = mix(alb, vec3(0.26,0.24,0.22), smoothstep(0.6, 0.8, fbm(p*4.0 + 3.0))*0.5);           // свалявшиеся места
+        float rime = smoothstep(0.25, 0.03, v_uv.y) * fray;
+        alb = mix(alb, vec3(0.86,0.9,0.96), rime * snow * 0.7);
+        if(inside) alb *= 0.45;
+        col = shade(alb, N, V, 0.0, 1.0);
+        col += alb * (light_color + lamp_light(v_wpos, N)) * pow(1.0 - ndv, 2.0) * 0.55;          // пух светится по краю
+    }
+    else if(material == 8){                        // валенки
+        vec3 alb = mix(vec3(0.24,0.23,0.22), vec3(0.36,0.35,0.33), fbm(p*50.0)) * (0.85 + 0.25*vnoise(p*260.0));
+        alb = mix(alb, vec3(0.86,0.9,0.96), smoothstep(0.16, 0.02, v_wpos.y) * snow * (0.5 + 0.5*vnoise(p*40.0)));
+        col = shade(alb, N, V, 0.0, 1.0);
+        col += alb * light_color * pow(1.0 - ndv, 2.0) * 0.3;
     }
     else if(material == 6){                        // ногти: жёлтые, толстые, с бороздками
         vec3 alb = mix(vec3(0.55,0.50,0.38), vec3(0.68,0.62,0.48), smoothstep(0.3, 0.7, sin(lp.x*900.0)*0.5+0.5));
@@ -196,6 +228,8 @@ cloth_shader = Shader(name='babka_cloth', language=Shader.GLSL, vertex=VERT, fra
 sepia_shader = Shader(name='sepia_photo', language=Shader.GLSL, fragment=SEPIA_FRAG,
                       default_input=dict(strength=1.0, time=0.0))
 
-MATERIALS = dict(skin=0, face=1, linen=2, eye=3, hair=4, leather=5, nail=6)
+MATERIALS = dict(skin=0, face=1, linen=2, eye=3, hair=4, leather=5, nail=6, wool=7, felt=8)
 FRAYED = ('skirt', 'shawl', 'hood', 'forearm_R', 'forearm_L')
+NO_SNOW = ('eye', 'face', 'nail')
+COLD = {'nose': 1.0, 'hand_R': 0.6, 'hand_L': 0.6}
 WINDY = {'skirt': 1.0, 'shawl': 1.3, 'hood': 0.8, 'forearm_R': 0.6, 'forearm_L': 0.6}

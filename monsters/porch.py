@@ -17,7 +17,14 @@ def _wood(mesh, parent, **kw):
     return e
 
 
-def build_porch(position=(0, 0, 0), rotation_y=0):
+def _ice(mesh, parent, **kw):
+    e = _wood(mesh, parent, **kw)
+    e.set_shader_input('material', MATERIAL['ice'])
+    e.set_shader_input('snow_mask', 0.0)
+    return e
+
+
+def build_porch(position=(0, 0, 0), rotation_y=0, icicles=False):
     """Ступенька стоит перед стеной; бабка садится на её край (локально z≈0)."""
     root = Entity(position=position, rotation_y=rotation_y)
     rng = np.random.default_rng(2)
@@ -44,4 +51,12 @@ def build_porch(position=(0, 0, 0), rotation_y=0):
         _wood(board, root, position=(0, y, z))
         _wood(loft([(0, 0.08, 0.08, 0, 0), (y, 0.08, 0.08, 0, 0)], rings=3, seg=6), root, position=(-1.0, 0, z))
         _wood(loft([(0, 0.08, 0.08, 0, 0), (y, 0.08, 0.08, 0, 0)], rings=3, seg=6), root, position=(1.0, 0, z))
+    if icicles:
+        # сосульки под верхним бревном
+        for i in range(34):
+            x = rng.uniform(-3.0, 3.0)
+            L = rng.uniform(0.08, 0.45) * (1.0 if abs(x) > 0.7 else 0.6)
+            m = loft([(-L, 0.002, 0.002, 0, 0), (-L * 0.6, 0.008, 0.008, 0, 0), (-0.02, 0.018, 0.018, 0, 0), (0.0, 0.02, 0.02, 0, 0)],
+                     rings=8, seg=8, noise=0.25, noise_scale=40, seed=i)
+            _ice(m, root, position=(x, 0.15 + 9 * 0.27 - 0.13, -0.62))
     return root

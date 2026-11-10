@@ -29,16 +29,16 @@ from panda3d.core import NodePath as NP  # noqa: E402
 from ursina import scene  # noqa: E402
 from taiga_demo import build_taiga  # noqa: E402
 
-FOG = (0.035, 0.04, 0.05)
+FOG = (0.06, 0.07, 0.095)
 random.seed(3)
-build_taiga(clear=10.0)
-build_porch(position=(0, 0, 0))
-set_environment(light_dir=(0.5, 0.55, 0.55), light_color=(0.50, 0.56, 0.70), fog_color=FOG, fog_density=0.06)
+build_taiga(clear=10.0, winter=True)
+build_porch(position=(0, 0, 0), icicles=True)
+set_environment(light_dir=(0.5, 0.55, 0.55), light_color=(0.52, 0.60, 0.80), fog_color=FOG, fog_density=0.055)
 NP.set_shader_input(scene, 'rim_dir', Vec3(-0.5, 0.6, -0.7))
 NP.set_shader_input(scene, 'rim_color', Vec3(0.30, 0.36, 0.52))
 window.color = color.rgb(*FOG)
 lamp = KeroseneLamp(position=(0.62, 0.0, 0.42), power=5.0)
-atmo = Atmosphere(center=(0, 0, 0.8), radius=5)
+atmo = Atmosphere(center=(0, 0, 0.8), radius=5, motes=30, snowfall=650)
 film = FilmLook(grade='cinema', letterbox=False, aperture=1.2)
 camera.fov = 32
 
@@ -107,9 +107,9 @@ if __name__ == '__main__':
     viewer.position = Vec3(0.4, 1.6, 4.5)
     step(30)
     # главный кадр как на фото (сепия) — для сравнения с референсом
-    film.grade = 1.0
+    film.grade = 0.0
     film.focus_on(b)
-    cam(Vec3(0.5, 1.1, 5.6), Vec3(0.1, 0.95, 0.2))
+    cam(Vec3(2.2, 1.9, 7.8), Vec3(0.0, 1.0, 0.0))
     step(3)
     grab().save(OUT / 'hero.png')
     print('saved', OUT / 'hero.png')
@@ -129,8 +129,8 @@ if __name__ == '__main__':
 
     shots, labels = [], []
     # 1. общий план: наезд из темноты
-    rec(30, lambda k: Vec3(1.6 - 0.9 * k, 1.5, 8.0 - 2.6 * k), lambda k: Vec3(0, 1.0, 0), b)
-    shots.append(frames[-1]); labels.append('1. Общий план: крыльцо, лампа, она сидит')
+    rec(30, lambda k: Vec3(2.6 - 1.6 * k, 2.0 - 0.5 * k, 10.0 - 4.0 * k), lambda k: Vec3(0, 1.0, 0), b)
+    shots.append(frames[-1]); labels.append('1. Снежная ночь у избы')
     # 2. крупно: глаза поверх пальцев
     rec(26, lambda k: head() + Vec3(0.25 - 0.1 * k, 0.0, 1.05 - 0.25 * k), lambda k: head() - Vec3(0, 0.03, 0),
         b.p['eye_1'])

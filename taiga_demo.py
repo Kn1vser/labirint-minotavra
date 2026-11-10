@@ -36,10 +36,11 @@ def _nature(mesh, kind, parent, base=(0.5, 0.5, 0.5), sway=0.0, **kw):
     return e
 
 
-def build_taiga(seed=5, radius=28, clear=6.0, trees=True):
-    """Земля, ели, берёзы и камни. Поляна радиусом clear в центре остаётся свободной."""
+def build_taiga(seed=5, radius=28, clear=6.0, trees=True, winter=False):
+    """Земля, ели, берёзы и камни. Поляна радиусом clear в центре остаётся свободной.
+    winter=True — снежная тайга: снег везде, берёзы голые."""
     from monsters.frost_mimic import set_environment
-    set_environment(light_dir=SUN_DIR, light_color=SUN_COLOR, fog_color=FOG, fog_density=0.03)
+    set_environment(light_dir=SUN_DIR, light_color=SUN_COLOR, fog_color=FOG, fog_density=0.03, snow=1.0 if winter else 0.0)
     window.color = color.rgb(*FOG)
     root = Entity()
     g = Entity(parent=root, model='plane', scale=radius * 2.5, shader=ground_shader)
@@ -68,7 +69,8 @@ def build_taiga(seed=5, radius=28, clear=6.0, trees=True):
             ry = rng.uniform(0, 360)
             _nature(trunk, 'birch', root, position=(x, 0, z), rotation_y=ry)
             gold = (0.86, 0.62 + rng.uniform(-0.08, 0.06), 0.12)
-            _nature(crown, 'plain', root, base=gold, position=(x, 0, z), rotation_y=ry, sway=0.12)
+            if not winter:
+                _nature(crown, 'plain', root, base=gold, position=(x, 0, z), rotation_y=ry, sway=0.12)
         else:
             _nature(rock, 'wood', root, position=(x, 0.1, z), rotation_y=rng.uniform(0, 360),
                     scale=rng.uniform(0.6, 1.4))
