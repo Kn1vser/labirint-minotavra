@@ -475,4 +475,5 @@ GLOBAL_DEFAULTS = dict(
     snow_mask=1.0,
     cold_flush=0.0,
     tint=(1, 1, 1),
+    hem_band=0.0,
 )

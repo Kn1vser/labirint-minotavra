@@ -29,7 +29,7 @@ set_environment(light_dir=(0.45, 0.6, 0.65), light_color=(0.85, 0.90, 1.05), fog
 NodePath.set_shader_input(scene, 'rim_dir', Vec3(-0.5, 0.5, -0.8))
 NodePath.set_shader_input(scene, 'rim_color', Vec3(0.45, 0.55, 0.8))
 window.color = color.rgb(*FOG)
-lamp = KeroseneLamp(position=(0.55, 0.0, 0.55), power=2.5)
+lamp = KeroseneLamp(position=(0.95, 0.0, 0.9), power=1.8)
 atmo = Atmosphere(center=(0, 0, 0), radius=4, motes=0, fog_puffs=10, snowfall=250)
 film = FilmLook(grade='cinema', letterbox=False, aperture=0.35)
 camera.fov = 30
@@ -68,6 +68,21 @@ def font(size):
     return ImageFont.truetype(p, size) if Path(p).exists() else ImageFont.load_default()
 
 
+def sheet(imgs, labels, path, title):
+    pad, top, cols = 16, 60, len(imgs)
+    out = Image.new('RGB', (cols * W + (cols + 1) * pad, H + top + 46), (10, 11, 14))
+    d = ImageDraw.Draw(out)
+    d.text((pad, 14), title, fill=(235, 230, 220), font=font(30))
+    for i, (im, lab) in enumerate(zip(imgs, labels)):
+        x = pad + i * (W + pad)
+        out.paste(im, (x, top))
+        tw = d.textlength(lab, font=font(22))
+        d.text((x + W / 2 - tw / 2, top + H + 10), lab, fill=(210, 205, 195), font=font(22))
+    out = out.resize((out.width * 2 // 3, out.height * 2 // 3), Image.LANCZOS)
+    out.save(path)
+    print('saved', path)
+
+
 if __name__ == '__main__':
     step(40)
     imgs, labels = [], []
@@ -87,16 +102,34 @@ if __name__ == '__main__':
     imgs.append(grab())
     labels.append('Руки: красные от мороза')
 
-    pad, top, cols = 16, 60, 6
-    out = Image.new('RGB', (cols * W + (cols + 1) * pad, H + top + 46), (10, 11, 14))
-    d = ImageDraw.Draw(out)
-    d.text((pad, 14), 'Бабка — снежная модель', fill=(235, 230, 220), font=font(30))
-    for i, (im, lab) in enumerate(zip(imgs, labels)):
-        x = pad + i * (W + pad)
-        out.paste(im, (x, top))
-        tw = d.textlength(lab, font=font(22))
-        d.text((x + W / 2 - tw / 2, top + H + 10), lab, fill=(210, 205, 195), font=font(22))
-    out = out.resize((out.width * 2 // 3, out.height * 2 // 3), Image.LANCZOS)
-    out.save(OUT / 'model.png')
-    print('saved', OUT / 'model.png')
+    sheet(imgs, labels, OUT / 'model.png', 'Бабка — снежная модель')
+
+    # лицо: опускает руки
+    b.target = Entity(position=(0, 1.9, 3))
+    b._set('caught')
+    step(45)
+    hp = Vec3(*b.p['head'].world_position) + Vec3(0, 0.1, 0.0)
+    fwd = Vec3(*scene.getRelativeVector(b.p['head'], Vec3(0, 0, 1))).normalized()
+    imgs2, labels2 = [], []
+    for ang, dist, lab in ((0, 0.5, 'Лицо анфас'), (35, 0.5, '3/4: веки, брови, иней'), (-55, 0.5, 'Сбоку: горбатый нос, брови')):
+        a = math.radians(ang)
+        right = Vec3(fwd.z, 0, -fwd.x)
+        pos = hp + (fwd * math.cos(a) + right * math.sin(a)) * dist
+        camera.position = pos
+        NodePath.lookAt(camera, Point3(*hp), Vec3(0, 1, 0))
+        step(2)
+        imgs2.append(grab())
+        labels2.append(lab)
+    sp = Vec3(*b.p['sash'].world_position) + Vec3(0, 0.0, 0.0)
+    cam(sp, 1.1, 30, sp.y + 0.1)
+    step(2)
+    imgs2.append(grab())
+    labels2.append('Кушак, концы платка узлом')
+    fp = Vec3(*b.p['ankle_R'].world_position)
+    cam(fp, 0.9, 25, 0.35)
+    step(2)
+    imgs2.append(grab())
+    labels2.append('Валенки с галошами')
+    sheet(imgs2, labels2, OUT / 'face.png', 'Бабка — лицо и детали')
     application.quit()
+
