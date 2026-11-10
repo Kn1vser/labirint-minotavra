@@ -15,10 +15,13 @@ sys.path.insert(0, str(ROOT))
 from ursina import Entity, Ursina, application, scene  # noqa: E402
 
 app = Ursina(size=(64, 64), borderless=True, development_mode=False)
+from monsters import babka_mesh  # noqa: E402
+if '--detail' in sys.argv:
+    babka_mesh.set_detail(float(sys.argv[sys.argv.index('--detail') + 1]))
 from monsters.babka import Babka  # noqa: E402
 from monsters.babka_mesh import build_babka  # noqa: E402
 
-pose = sys.argv[1] if len(sys.argv) > 1 else 'sit'
+pose = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith('--') else 'sit'
 b = Babka(target=Entity(position=(0.2, 1.55, 3.5)), sitting=(pose == 'sit'))
 b.detect_range = 0
 b.fixed_dt = 1 / 30
