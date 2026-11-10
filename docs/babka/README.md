@@ -83,6 +83,7 @@ b.state                         # sit / rise / patrol / notice / chase / grab / 
 
 ![blender_hero](blender_hero.png)
 ![blender_face](blender_face.png)
+![blender_turnaround](blender_turnaround.png)
 
 ```bash
 pip install bpy                                   # нужен Python 3.13 (у bpy нет сборки под 3.14)

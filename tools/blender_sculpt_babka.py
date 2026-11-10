@@ -442,6 +442,17 @@ def main():
             a = math.radians(yaw)
             loc = (math.sin(a) * 5.2, math.cos(a) * 5.2, 1.2)
             render(camera('cam_' + lab, loc, (0, 0, 1.0), lens=50), OUT / f'blender_{lab}.png')
+        # сводный лист видов
+        from PIL import Image
+        names = ('front', 'three_quarter', 'side', 'back')
+        ims = [Image.open(OUT / f'blender_{n}.png').convert('RGB') for n in names]
+        sheet = Image.new('RGB', (700 * 4, 1100))
+        for i, im in enumerate(ims):
+            sheet.paste(im, (i * 700, 0))
+        sheet.resize((2000, 786)).save(OUT / 'blender_turnaround.png')
+        for n in names:
+            (OUT / f'blender_{n}.png').unlink()
+        print('saved', OUT / 'blender_turnaround.png')
 
 
 main()
