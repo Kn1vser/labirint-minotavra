@@ -103,13 +103,13 @@ def branch(start, direction, length, radius, depth, rng, out, spread=0.6):
 
 # ---------------------------------------------------------------- ель
 
-def spruce(height=1.5, radius=0.55, tiers=8, seed=1):
+def spruce(height=1.5, radius=0.55, tiers=8, seed=1, crown_start=0.12):
     rng = np.random.default_rng(seed)
     trunk = tube_path([(0, -0.1, 0), (0, height * 0.5, 0), (0, height, 0)], [radius * 0.09, radius * 0.06, 0.01], seg=8)
     parts = [trunk]
     for k in range(tiers):
         t = k / (tiers - 1)                 # 0 — нижний ярус
-        yb = height * (0.12 + 0.78 * t)
+        yb = height * (crown_start + (0.9 - crown_start) * t)
         h = height * (0.30 - 0.12 * t)
         r = radius * (1.0 - 0.82 * t) * rng.uniform(0.9, 1.1)
         ph = rng.uniform(0, 6.28)

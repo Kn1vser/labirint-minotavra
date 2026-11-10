@@ -36,7 +36,7 @@ def _nature(mesh, kind, parent, base=(0.5, 0.5, 0.5), sway=0.0, **kw):
     return e
 
 
-def build_taiga(seed=5, radius=28, clear=6.0, trees=True, winter=False):
+def build_taiga(seed=5, radius=28, clear=6.0, trees=True, winter=False, crown_start=0.12):
     """Земля, ели, берёзы и камни. Поляна радиусом clear в центре остаётся свободной.
     winter=True — снежная тайга: снег везде, берёзы голые."""
     from monsters.frost_mimic import set_environment
@@ -46,14 +46,15 @@ def build_taiga(seed=5, radius=28, clear=6.0, trees=True, winter=False):
     g = Entity(parent=root, model='plane', scale=radius * 2.5, shader=ground_shader)
     g.set_shader_input('part_offset', Vec3(0, 0, 0))
     g.set_shader_input('sway', 0.0)
+    root.obstacles = []          # (x, z, радиус) — для столкновений
     if not trees:
         return root
     rng = np.random.default_rng(seed)
-    spruce_models = [spruce(rng.uniform(7, 12), rng.uniform(2.0, 2.8), tiers=12, seed=i) for i in range(4)]
+    spruce_models = [spruce(rng.uniform(7, 12), rng.uniform(2.0, 2.8), tiers=12, seed=i, crown_start=crown_start) for i in range(4)]
     birch_models = [birch(rng.uniform(7, 10), seed=i) for i in range(3)]
     rock = ellipsoid(0.8, 0.45, 0.65, rings=12, seg=18, noise=0.35, seed=3)
     placed = []
-    for _ in range(70):
+    for _ in range(int(70 * (radius / 28) ** 2)):
         a = rng.uniform(0, 2 * math.pi)
         r = rng.uniform(clear, radius)
         x, z = math.cos(a) * r, math.sin(a) * r
@@ -64,16 +65,19 @@ def build_taiga(seed=5, radius=28, clear=6.0, trees=True, winter=False):
         if kind < 0.6:
             m = spruce_models[rng.integers(0, 4)]
             _nature(m, 'needles', root, position=(x, 0, z), rotation_y=rng.uniform(0, 360), sway=0.15)
+            root.obstacles.append((x, z, 0.45))
         elif kind < 0.9:
             trunk, crown = birch_models[rng.integers(0, 3)]
             ry = rng.uniform(0, 360)
             _nature(trunk, 'birch', root, position=(x, 0, z), rotation_y=ry)
+            root.obstacles.append((x, z, 0.3))
             gold = (0.86, 0.62 + rng.uniform(-0.08, 0.06), 0.12)
             if not winter:
                 _nature(crown, 'plain', root, base=gold, position=(x, 0, z), rotation_y=ry, sway=0.12)
         else:
-            _nature(rock, 'wood', root, position=(x, 0.1, z), rotation_y=rng.uniform(0, 360),
-                    scale=rng.uniform(0.6, 1.4))
+            sc = rng.uniform(0.6, 1.4)
+            _nature(rock, 'wood', root, position=(x, 0.1, z), rotation_y=rng.uniform(0, 360), scale=sc)
+            root.obstacles.append((x, z, 0.8 * sc))
     return root
 
 

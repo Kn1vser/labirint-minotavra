@@ -4,3 +4,4 @@ __pycache__/
 docs/babka/*.blend
 docs/babka/*.blend1
 docs/babka/pose_*.npz
+sounds/

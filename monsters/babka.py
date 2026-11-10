@@ -48,6 +48,7 @@ def _lerp(a, b, t):
 class Babka(Entity):
     fixed_dt = None
     detect_range = 9.0
+    chase_speed = 2.7
     lose_range = 24.0
     fov = 80
 
@@ -115,6 +116,30 @@ class Babka(Entity):
         if self.state not in ('caught',):
             self._set('stunned')
             self._say(random.choice(['…не надо…', 'Убери-и…']))
+
+    def investigate(self, pos):
+        """Услышала шум: идёт проверить место (если сидела — встаёт)."""
+        self.waypoints = [Vec3(pos[0], 0, pos[2])]
+        self._wp = 0
+        if self.state == 'sit':
+            self._set('rise')
+        elif self.state == 'search':
+            self._set('patrol')
+
+    def reset(self, position, rotation_y=0.0, sitting=True):
+        """Вернуть на место в исходное состояние (рестарт игры)."""
+        self.position = Vec3(*position)
+        self.rotation_y = rotation_y
+        self.state = 'sit' if sitting else 'patrol'
+        self._st = 0.0
+        self._speed = 0.0
+        self.sit = 1.0 if sitting else 0.0
+        self._seated_origin = sitting
+        self._skirt_sit = -1.0
+        self.unfold = self.reach = self.eyes = self._lunge = 0.0
+        self.cover = 1.0
+        self.waypoints = []
+        self._wp = 0
 
     def alert(self):
         if self.state == 'sit':
@@ -186,7 +211,7 @@ class Babka(Entity):
                 self._say(random.choice(LINES_CHASE))
         elif st == 'chase':
             turn = self._turn_to(tp, 150, dt)
-            want_speed = 2.7 * max(0.2, 1 - turn / 90)
+            want_speed = self.chase_speed * max(0.2, 1 - turn / 90)
             if dist < 1.45:
                 self._set('grab')
             elif dist > self.lose_range:

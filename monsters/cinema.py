@@ -27,6 +27,7 @@ uniform float aperture;       // сила размытия вне фокуса
 uniform float letterbox;      // 0..1 — чёрные полосы 2.35:1
 uniform float grade;          // 0 — кино (холод/тепло), 1 — сепия-фото
 uniform float aspect;
+uniform float fear;           // 0..1 — она близко: темнеют края, выцветает цвет, зерно
 in vec2 uv;
 out vec4 color;
 float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
@@ -64,9 +65,10 @@ void main(){
     float gs = pow(g, 0.8) * 1.15;
     vec3 sep = vec3(gs*1.07 + 0.03, gs*0.95 + 0.02, gs*0.78);
     c = mix(cine, sep, grade);
+    c = mix(c, vec3(dot(c, vec3(0.3,0.59,0.11))) * vec3(0.9,0.95,1.05), fear * 0.55);
     // плёнка: зерно, редкие пылинки и царапины, лёгкое мерцание
     float fr = floor(time * 18.0);
-    c += (h(uv*vec2(1300.0, 800.0) + fr) - 0.5) * 0.06;
+    c += (h(uv*vec2(1300.0, 800.0) + fr) - 0.5) * (0.06 + 0.10*fear);
     float scratch = step(0.9985, h(vec2(floor(uv.x*700.0), fr))) * step(0.6, h(vec2(fr, 3.0)));
     c = mix(c, c*0.6 + 0.1, scratch);
     float dust = step(0.99995, h(floor(uv*vec2(500.0, 300.0)) + fr*7.0));
@@ -75,6 +77,7 @@ void main(){
     // виньетка
     float vig = smoothstep(0.95, 0.30, length(d*vec2(1.15, 1.0)));
     c *= mix(1.0, vig, 0.65);
+    c *= 1.0 - fear * smoothstep(0.15, 0.75, length(d)) * (0.75 + 0.15*sin(time*7.0));   // пульсирующая тьма по краям
     // кинорамка
     float bar = (1.0 - 1.0/2.35*aspect) * 0.5 * letterbox;
     if(uv.y < bar || uv.y > 1.0 - bar) c = vec3(0.0);
@@ -83,7 +86,7 @@ void main(){
 '''
 film_shader = Shader(name='film_look', language=Shader.GLSL, fragment=FILM_FRAG,
                      default_input=dict(time=0.0, near=0.1, far=10000.0, focus_dist=4.0, aperture=1.0,
-                                        letterbox=1.0, grade=0.0, aspect=16 / 9))
+                                        letterbox=1.0, grade=0.0, aspect=16 / 9, fear=0.0))
 
 
 class FilmLook(Entity):
@@ -97,6 +100,7 @@ class FilmLook(Entity):
         self.aperture = aperture
         self.focus_target = None
         self.focus = 4.0
+        self.fear = 0.0
         self._t = 0.0
         self.fixed_dt = None
 
@@ -115,7 +119,7 @@ class FilmLook(Entity):
             self.focus += (want - self.focus) * min(1, dt * 4)
         from ursina import window
         for k, v in dict(time=self._t, near=float(camera.clip_plane_near), far=float(camera.clip_plane_far),
-                         focus_dist=self.focus, aperture=self.aperture, letterbox=self.letterbox, grade=self.grade,
+                         focus_dist=self.focus, aperture=self.aperture, letterbox=self.letterbox, grade=self.grade, fear=self.fear,
                          aspect=float(window.aspect_ratio)).items():
             camera.set_shader_input(k, v)
 

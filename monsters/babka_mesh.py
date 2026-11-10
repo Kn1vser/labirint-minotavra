@@ -27,6 +27,13 @@ def Q(n):
     return max(3, int(round(n * DETAIL)))
 
 
+def set_detail(d):
+    """Качество модели: 1.3 — слабый ПК (~80 тыс. треугольников), 2.2 — среднее, 3.9 — максимум (~720 тыс.)."""
+    global DETAIL, SK_RINGS, SK_SEG
+    DETAIL = d
+    SK_RINGS, SK_SEG = max(24, int(28 * d)), max(48, int(58 * d))
+
+
 def cut(mesh, drop):
     c = mesh.vertices[mesh.triangles].mean(axis=1)
     m = ~drop(c)

@@ -52,11 +52,25 @@ uniform float lamp_power;
 uniform vec3 rim_dir;
 uniform vec3 rim_color;
 vec3 g_wpos = vec3(0.0);
+// фонарь игрока: конус света из flash_pos вдоль flash_dir
+uniform vec3 flash_pos;
+uniform vec3 flash_dir;
+uniform float flash_power;
 vec3 lamp_light(vec3 wpos, vec3 N){
     vec3 d = lamp_pos - wpos;
     float dist2 = max(dot(d, d), 0.04);
     float ndl = clamp(dot(N, normalize(d)) * 0.85 + 0.15, 0.0, 1.0);
-    return lamp_color * lamp_power * ndl / (1.0 + dist2 * 0.9);
+    vec3 res = lamp_color * lamp_power * ndl / (1.0 + dist2 * 0.9);
+    if(flash_power > 0.0){
+        vec3 fd = wpos - flash_pos;
+        float fl = max(length(fd), 0.05);
+        vec3 fn = fd / fl;
+        float c = dot(fn, normalize(flash_dir));
+        float cone = smoothstep(0.90, 0.975, c) + smoothstep(0.80, 0.90, c) * 0.12;      // яркое пятно + слабый ореол
+        float fndl = clamp(dot(N, -fn) * 0.75 + 0.25, 0.0, 1.0);
+        res += vec3(1.0, 0.95, 0.82) * flash_power * cone * fndl / (1.0 + fl * fl * 0.035);
+    }
+    return res;
 }
 // снег: копится на поверхностях, обращённых вверх
 uniform float snow;          // 0 — лето/осень, 1 — снежная тайга (на всю сцену)
@@ -471,6 +485,9 @@ GLOBAL_DEFAULTS = dict(
     lamp_power=0.0,
     rim_dir=(0, 0.3, -1),
     rim_color=(0, 0, 0),
+    flash_pos=(0, -100, 0),
+    flash_dir=(0, 0, 1),
+    flash_power=0.0,
     snow=0.0,
     snow_mask=1.0,
     cold_flush=0.0,
