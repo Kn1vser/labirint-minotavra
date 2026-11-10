@@ -77,7 +77,7 @@ vec3 skin_albedo(vec3 p, vec3 lp, float forehead){
     float crepe = vnoise(p*420.0) * 0.12;
     float spots = smoothstep(0.70, 0.80, vnoise(p*55.0)) * 0.22;
     float dirt = smoothstep(0.55, 0.8, fbm(p*14.0)) * 0.25;
-    vec3 alb = vec3(0.74,0.73,0.76);                            // бледная, обмороженная
+    vec3 alb = vec3(0.62,0.63,0.68);                            // серая, мёртвая
     alb = mix(alb, vec3(0.60,0.62,0.72), vnoise(p*12.0)*0.8);  // синюшные пятна
     alb *= 1.0 - wrinkles - crepe - spots;
     float pores = smoothstep(0.62, 0.9, vnoise(p*1100.0)) * 0.07;
@@ -105,10 +105,13 @@ void main(){
         float forehead = material == 1 ? smoothstep(0.12, 0.17, lp.y) : 0.0;
         vec3 alb = skin_albedo(p, lp, forehead);
         float ao = material == 1 ? v_uv.x : 1.0;
-        alb = mix(alb, alb*vec3(1.35,0.72,0.72) + vec3(0.06,0.0,0.0), cold_flush * 0.8);
-        if(material == 1){                                        // щёки горят от мороза
-            float ch = exp(-(pow(abs(lp.x) - 0.048, 2.0)/0.0004 + pow(lp.y - 0.07, 2.0)/0.0006));
-            alb = mix(alb, vec3(0.80,0.36,0.38), ch * 0.6);
+        alb = mix(alb, vec3(0.05,0.055,0.09), cold_flush * (0.75 + 0.25*vnoise(p*40.0)));     // обморожение: сине-чёрная кожа
+        if(material == 1){
+            // трещины по коже, как по льду
+            vec3 cr = voronoi(p*34.0 + 2.0);
+            float crack = (1.0 - smoothstep(0.0, 0.012, cr.y)) * smoothstep(0.35, 0.6, vnoise(p*9.0 + 4.0));
+            alb = mix(alb, vec3(0.03,0.04,0.08), crack * 0.85);
+            alb = mix(alb, alb*vec3(0.62,0.66,0.82), 0.35);                                       // мертвенная синева
         }
         if(material == 1){
             // «гусиные лапки» у глаз и складки на переносице
@@ -129,7 +132,7 @@ void main(){
             alb = mix(alb, alb*vec3(0.75,0.78,0.9), vein*0.45);
             alb *= 1.0 - smoothstep(0.85, 1.0, sin(lp.y*700.0)) * 0.05;
         }
-        alb *= mix(0.35, 1.0, ao);                                   // глазницы и щёки в тени
+        alb *= mix(0.06, 1.0, ao*ao);                                // глазницы — чёрные провалы
         alb = mix(alb, alb*vec3(0.85,0.72,0.75), (1.0 - ao)*0.6);   // синюшность под глазами
         col = shade(alb, N, V, 0.25, mix(0.45, 1.0, ao));
         vec3 L = normalize(light_dir);
@@ -181,17 +184,19 @@ void main(){
     else if(material == 3){                        // глаза
         vec3 q = normalize(lp);
         float r = length(q.xy);
-        vec3 alb = mix(vec3(0.62,0.58,0.52), vec3(0.50,0.40,0.36), smoothstep(0.3, 1.0, r));   // желтоватые белки
-        float iris = 1.0 - smoothstep(0.42, 0.48, r);
-        vec3 irisCol = mix(vec3(0.35,0.55,0.75), vec3(0.70,0.86,0.98), vnoise(q*40.0));       // ледяная радужка
-        float ring = smoothstep(0.30, 0.44, r) * iris;                  // старческая дуга
-        irisCol = mix(irisCol, vec3(0.62,0.62,0.60), ring*0.7);
+        vec3 alb = mix(vec3(0.80,0.84,0.90), vec3(0.50,0.50,0.58), smoothstep(0.5, 1.0, r));   // мутные белки
+        float veins = smoothstep(0.9, 0.99, 1.0 - abs(vnoise(q*vec3(14.0,14.0,3.0))*2.0 - 1.0)) * smoothstep(0.35, 0.9, r);
+        alb = mix(alb, vec3(0.30,0.10,0.14), veins * 0.6);
+        float iris = 1.0 - smoothstep(0.30, 0.36, r);
+        vec3 irisCol = vec3(0.86,0.90,0.96);                                                   // бельмо
+        float ring = smoothstep(0.24, 0.33, r) * iris;
+        irisCol = mix(irisCol, vec3(0.45,0.55,0.70), ring*0.8);
         alb = mix(alb, irisCol, iris * step(0.0, q.z));
-        alb = mix(alb, vec3(0.02), (1.0 - smoothstep(0.14, 0.2, r)) * step(0.0, q.z));
+        alb = mix(alb, vec3(0.0), (1.0 - smoothstep(0.035, 0.06, r)) * step(0.0, q.z));         // зрачок-точка
         col = shade(alb, N, V, 0.9, 0.85);
         vec3 H = normalize(normalize(light_dir) + V);
         col += vec3(1.0) * pow(clamp(dot(N, H), 0.0, 1.0), 300.0) * 1.5;   // влажный блик
-        col += irisCol * iris * step(0.0, q.z) * 0.35;                     // слабо светятся холодом
+        col += irisCol * iris * step(0.0, q.z) * 0.55;                     // светятся холодом из провалов
     }
     else if(material == 4){                        // седые пряди
         vec3 alb = vec3(0.80,0.80,0.82) * (0.8 + 0.3*vnoise(p*300.0));
@@ -279,15 +284,16 @@ void main(){
         float star = max(step(abs(c.x), 0.07)*step(abs(c.y), 0.35), step(abs(c.y), 0.07)*step(abs(c.x), 0.35));
         star = max(star, step(abs(abs(c.x) - abs(c.y)), 0.06) * step(length(c), 0.35));
         float cuff = step(-0.215, lp.y);
-        vec3 alb = mix(vec3(0.62,0.08,0.09), vec3(0.92,0.9,0.85), star * (1.0 - cuff));
-        alb = mix(alb, mix(vec3(0.92,0.9,0.85), vec3(0.62,0.08,0.09), step(0.5, fract(lp.y*90.0))), cuff);
+        vec3 base = mix(tint, vec3(dot(tint, vec3(0.33))), 0.25);
+        vec3 alb = mix(base, vec3(0.92,0.9,0.85), star * 0.7);
+        cuff *= 0.0;
         alb *= knit;
         alb = mix(alb, vec3(0.9,0.93,0.98), smoothstep(0.7, 0.95, vnoise(p*200.0)) * 0.4);   // снег налип
         col = shade(alb, N, V, 0.0, 1.0);
         col += alb * light_color * pow(1.0 - ndv, 2.0) * 0.4;
     }
     else if(material == 6){                        // ногти: жёлтые, толстые, с бороздками
-        vec3 alb = mix(vec3(0.55,0.50,0.38), vec3(0.68,0.62,0.48), smoothstep(0.3, 0.7, sin(lp.x*900.0)*0.5+0.5));
+        vec3 alb = mix(vec3(0.10,0.09,0.10), vec3(0.30,0.28,0.26), smoothstep(0.3, 0.7, sin(lp.x*900.0)*0.5+0.5));
         col = shade(alb, N, V, 0.5, 1.0);
     }
     else {                                         // кожа ботинок
@@ -328,6 +334,8 @@ MATERIALS = dict(skin=0, face=1, linen=2, eye=3, hair=4, leather=5, nail=6, wool
 FRAYED = ('skirt', 'shawl', 'hood', 'forearm_R', 'forearm_L')
 NO_SNOW = ('eye', 'face', 'nail', 'snowpack', 'ice', 'cavity')
 # цвета ткани по частям
-TINTS = dict(wool=(0.50, 0.07, 0.09), linen=(0.13, 0.17, 0.34), stocking=(0.30, 0.12, 0.10))
-COLD = {'nose': 0.45, 'ala_1': 0.45, 'ala_-1': 0.45, 'hand_R': 0.6, 'hand_L': 0.6}
+TINTS = dict(wool=(0.20, 0.018, 0.028), linen=(0.035, 0.04, 0.065), stocking=(0.08, 0.05, 0.05))
+KID_MITTENS = ((0.62, 0.08, 0.09), (0.12, 0.25, 0.60), (0.80, 0.62, 0.12), (0.15, 0.45, 0.22), (0.80, 0.42, 0.55),
+               (0.75, 0.75, 0.72), (0.45, 0.20, 0.55))
+COLD = {'nose': 0.35, 'ala_1': 0.35, 'ala_-1': 0.35, 'hand_R': 0.25, 'hand_L': 0.25}
 WINDY = {'skirt': 1.0, 'shawl': 1.3, 'hood': 0.8, 'forearm_R': 0.6, 'forearm_L': 0.6}

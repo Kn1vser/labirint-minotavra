@@ -21,7 +21,7 @@ from ursina import Entity, Mesh, Vec3, Vec4, camera, scene, time as utime
 from ursina.shaders import unlit_shader
 
 from .babka_mesh import NECK_MAX, PELVIS_Y, SEAT_H, build_babka, skirt_vertices
-from .babka_shaders import COLD, FRAYED, MATERIALS, NO_SNOW, TINTS, WINDY, cloth_shader
+from .babka_shaders import COLD, FRAYED, KID_MITTENS, MATERIALS, NO_SNOW, TINTS, WINDY, cloth_shader
 from .frost_mimic import init_scene_uniforms
 
 L_UP, L_FORE = 0.43, 0.43
@@ -98,7 +98,7 @@ class Babka(Entity):
                 e.set_shader_input('fray', 1.0 if s.name in FRAYED else 0.0)
                 e.set_shader_input('part_offset', Vec3(*s.body_pos))
                 e.set_shader_input('wind', WINDY.get(s.name, 0.0))
-                tint = TINTS['stocking'] if s.name.startswith('shin') else TINTS.get(s.kind, (1, 1, 1))
+                tint = TINTS['stocking'] if s.name.startswith('shin') else KID_MITTENS[int(s.name.split('_')[-1]) % len(KID_MITTENS)] if s.kind == 'mitten' else TINTS.get(s.kind, (1, 1, 1))
                 e.set_shader_input('tint', Vec3(*tint))
                 e.set_shader_input('hem_band', 1.0 if s.name == 'skirt' else 0.0)
                 e.set_shader_input('snow_mask', 0.0 if s.kind in NO_SNOW else (0.4 if s.kind == 'skin' else 0.15 if s.kind in ('rubber', 'sash') else 1.0))
@@ -313,11 +313,6 @@ class Babka(Entity):
         p['head'].rotation_x -= rock * 0.8                                   # взгляд не отрывается, пока качается
         for side, sx in (('R', 1), ('L', -1)):
             p[f'shoulder_{side}'].y = 0.26 + breath * 0.006
-
-        # варежки на резинке висят отвесно и покачиваются
-        for side, sx in (('R', 1), ('L', -1)):
-            p[f'mitt_{side}'].world_rotation = Vec3(math.sin(self._t * 1.9 + sx) * 6 + s * 10 * sp,
-                                                    self.world_rotation_y, math.cos(self._t * 1.5 + sx) * 5)
 
         # глаза: следят за целью короткими рывками; веки моргают
         for sx in (1, -1):

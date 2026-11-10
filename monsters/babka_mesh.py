@@ -16,7 +16,7 @@ from .kochkar_mesh import merge, tube_path
 PELVIS_Y = 1.02
 THIGH = 0.47
 SHIN = 0.46
-NECK_MAX = 0.28
+NECK_MAX = 0.42
 SEAT_H = 0.46              # высота ступеньки крыльца
 SKIRT_L = 1.0
 HC, HR = (0.0, 0.10, 0.015), (0.076, 0.108, 0.09)
@@ -84,15 +84,19 @@ def gaunt_skull():
         ang = np.arctan2(dy, dx * sx)
         crows = crows + (np.abs(np.sin(ang * 7)) ** 14) * np.exp(-((r - 0.012) ** 2) / 0.00005) * (dx * sx > 0)
 
-    disp = (-0.019 * sockets - 0.006 * inner + 0.0065 * brow - 0.0016 * glabella + 0.0032 * bags - 0.0018 * bag_crease
-            + 0.0075 * bones - 0.015 * cheeks - 0.003 * nlf + 0.0022 * nl_bulge
-            + 0.0035 * muzzle - 0.0019 * mouth_crease - 0.0008 * pucker + 0.006 * chin - 0.0015 * chin_crease
-            + 0.004 * jowls - 0.0011 * fh - 0.0009 * crows) * front - 0.008 * temples
+    # застывший крик: под кожей на месте рта — глубокая овальная впадина, кожа натянута вертикальными тяжами
+    scream = _g(x, y, 0, 0.036, 0.017, 0.026)
+    strands = (np.sin(x * 2 * np.pi / 0.0065) * 0.5 + 0.5) ** 3 * scream
+    disp = (-0.027 * sockets - 0.008 * inner + 0.0075 * brow - 0.0016 * glabella + 0.002 * bags - 0.0022 * bag_crease
+            + 0.009 * bones - 0.022 * cheeks - 0.003 * nlf + 0.0015 * nl_bulge
+            - 0.013 * scream + 0.0035 * strands - 0.0019 * mouth_crease - 0.0008 * pucker + 0.004 * chin
+            - 0.0015 * chin_crease - 0.0011 * fh - 0.0009 * crows) * front - 0.012 * temples + 0.0 * muzzle * jowls
     v += m.normals * disp[:, None]
     jaw = np.clip((0.045 - y) / 0.06, 0, 1)
-    v[:, 0] *= 1 - 0.17 * jaw ** 1.5                          # узкий старческий подбородок
+    v[:, 0] *= 1 - 0.26 * jaw ** 1.5                          # узкий подбородок
+    v[:, 1] -= 0.034 * np.clip((0.07 - y) / 0.07, 0, 1) ** 1.3   # челюсть отвисла под кожей — лицо вытянуто
     m.vertices = v
-    ao = 1 - 0.85 * sockets * front - 0.4 * inner * front - 0.45 * cheeks * front - 0.3 * temples
+    ao = 1 - 0.97 * sockets * front - 0.4 * inner * front - 0.55 * cheeks * front - 0.4 * temples - 0.75 * scream * front
     ao -= (0.3 * nlf + 0.6 * mouth_crease + 0.3 * pucker + 0.35 * bag_crease + 0.4 * fh + 0.35 * crows
            + 0.4 * glabella + 0.35 * chin_crease) * front
     m.uvs = np.stack([np.clip(ao, 0.05, 1), m.uvs[:, 1]], -1)
@@ -212,14 +216,14 @@ def build_babka(seed=4):
     for sx in (1, -1):
         ex, ey = sx * 0.03, 0.111
         ez = face_z(ex, ey) - 0.021
-        er = 0.0102
+        er = 0.0128
         P(PartSpec(f'eye_{sx}', 'head', (ex, ey, ez), mesh=ellipsoid(er, er, er, rings=Q(14), seg=Q(18)), kind='eye'))
         P(PartSpec(f'lid_{sx}', 'head', (ex, ey + 0.004, ez + 0.002), rot=(-18, 0, 0),
-                   mesh=ellipsoid(0.0122, 0.0072, 0.0108, rings=Q(10), seg=Q(16)), kind='skin'))
+                   mesh=ellipsoid(0.004, 0.002, 0.004, rings=Q(6), seg=Q(8)), kind='skin'))
         # тяжёлое верхнее веко и нижнее с влажной кромкой — дуги вокруг глазного яблока
-        up = [(ex + (er + 0.0018) * math.cos(a), ey + 0.0035 + (er + 0.0008) * math.sin(a) * 0.55, ez + er * 0.78)
+        up = [(ex + (er + 0.0018) * math.cos(a), ey + 0.0015 + (er + 0.0008) * math.sin(a) * 0.95, ez + er * 0.62)
               for a in np.linspace(0.15, math.pi - 0.15, 14)]
-        lo = [(ex + (er + 0.0012) * math.cos(a), ey - 0.0015 + (er + 0.0008) * math.sin(a) * 0.62, ez + er * 0.8)
+        lo = [(ex + (er + 0.0012) * math.cos(a), ey - 0.0005 + (er + 0.0008) * math.sin(a) * 0.9, ez + er * 0.64)
               for a in np.linspace(math.pi + 0.25, 2 * math.pi - 0.25, 12)]
         P(PartSpec(f'uplid_{sx}', 'head', (0, 0, 0), mesh=tube_path(up, [0.0018] + [0.0032] * 12 + [0.0018], seg=Q(8)), kind='skin'))
         P(PartSpec(f'lolid_{sx}', 'head', (0, 0, 0), mesh=tube_path(lo, [0.0012] + [0.0021] * 10 + [0.0012], seg=Q(8)), kind='skin'))
@@ -245,13 +249,14 @@ def build_babka(seed=4):
 
     # седые пряди из-под капюшона
     strands = []
-    for i in range(16):
+    for i in range(46):
         sx = 1 if i % 2 else -1
-        x0 = sx * rng.uniform(0.03, 0.07)
+        x0 = sx * rng.uniform(0.025, 0.072)
         p = np.array((x0, 0.2, face_z(x0 * 0.8, 0.17) - 0.012))
         pts = [p.copy()]
-        for _ in range(7):
-            p = p + np.array([sx * rng.uniform(0.0, 0.01), -0.035, rng.uniform(-0.006, 0.004)])
+        seg_len = rng.uniform(0.03, 0.075)
+        for _ in range(9):
+            p = p + np.array([sx * rng.uniform(-0.002, 0.01), -seg_len, rng.uniform(-0.004, 0.008)])
             pts.append(p.copy())
         strands.append(tube_path(pts, np.linspace(0.003, 0.0012, len(pts)), seg=Q(5)))
     P(PartSpec('hair', 'head', (0, 0, 0), mesh=merge(strands), kind='hair'))
@@ -308,7 +313,7 @@ def build_babka(seed=4):
         P(PartSpec(f'hand_{side}', f'hand_aim_{side}', (0, 0, 0), mesh=hand, kind='skin'))
         # пальцы: две фаланги на шарнирах (сгибаются, подрагивают), с ногтями
         for k, (fx, L) in enumerate(((0.026, 0.13), (0.009, 0.15), (-0.009, 0.145), (-0.025, 0.118))):
-            L *= 0.85
+            L *= 0.85 * 1.38
             fx *= 0.85 * sx
             r0 = 0.0062
             P(PartSpec(f'f{k}a_{side}', f'hand_aim_{side}', (fx, -0.082, 0.004), kind='none'))
@@ -319,8 +324,9 @@ def build_babka(seed=4):
             P(PartSpec(f'f{k}b_{side}', f'f{k}a_{side}', (0, -0.55 * L, 0), kind='none'))
             dist = tube_path([(0, -0.45 * L * t, 0.002 * t) for t in ts], r0 * 0.88 * (1 - 0.3 * ts ** 2), seg=Q(8))
             P(PartSpec(f'f{k}dist_{side}', f'f{k}b_{side}', (0, 0, 0), mesh=dist, kind='skin'))
-            P(PartSpec(f'f{k}nail_{side}', f'f{k}b_{side}', (0, -0.45 * L + 0.009, -r0 * 0.62),
-                       mesh=ellipsoid(r0 * 0.78, 0.0085, 0.0018, rings=Q(8), seg=Q(12)), kind='nail'))
+            P(PartSpec(f'f{k}nail_{side}', f'f{k}b_{side}', (0, -0.45 * L - 0.004, -r0 * 0.5),
+                       mesh=loft([(-0.02, 0.0006, 0.0005, 0, 0.001), (-0.01, r0 * 0.5, 0.0013, 0, 0.0005), (0.0, r0 * 0.72, 0.0017, 0, 0),
+                                  (0.012, r0 * 0.7, 0.0016, 0, 0)], rings=Q(8), seg=Q(10)), kind='nail'))
 
     # ноги под платьем + стоптанные ботинки
     for side, sx in (('R', 1), ('L', -1)):
@@ -370,16 +376,33 @@ def build_babka(seed=4):
             tassels.append(tube_path([end + o, end + o * 1.6 + np.array([0, -0.05, 0]), end + o * 2.0 + np.array([0, -0.085, 0])],
                                      [0.0022, 0.002, 0.0015], seg=Q(4)))
     P(PartSpec('sash_tassels', 'spine1', (0, 0, 0), mesh=merge(tassels), kind='sash'))
-    # варежки на резинке: висят у манжет
-    for side, sx in (('R', 1), ('L', -1)):
-        P(PartSpec(f'mitt_{side}', f'elbow_{side}', (0, -0.38, 0.03), kind='none'))
-        string = tube_path([(0, 0, 0), (0.005, -0.09, 0.0), (0.0, -0.18, 0.0)], [0.0022] * 3, seg=Q(5))
+    # связка детских варежек на кушаке — маленькие, разных цветов, на верёвочках
+    for i, (x, z, drop) in enumerate(((-0.13, 0.115, 0.16), (-0.09, 0.135, 0.24), (-0.05, 0.145, 0.13), (-0.155, 0.08, 0.27),
+                                      (-0.02, 0.148, 0.21), (-0.11, 0.125, 0.33), (0.16, 0.07, 0.19))):
+        P(PartSpec(f'kid_mitt_{i}', 'spine1', (x, 0.03, z), kind='none'))
+        # юбка расширяется книзу — варежка должна лежать поверх неё, а не внутри
+        rad = math.hypot(x, z)
+        out = (0.17 * (drop + 0.08) ** 0.8 + 0.035)
+        ox, oz = x / rad * out, z / rad * out
+        string = tube_path([(0, 0, 0), (ox * 0.45, -drop * 0.5, oz * 0.45), (ox, -drop, oz)], [0.0018] * 3, seg=Q(5))
         mitt = loft([(-0.335, 0.012, 0.008, 0, 0), (-0.32, 0.036, 0.018, 0, 0), (-0.27, 0.042, 0.021, 0, 0), (-0.22, 0.04, 0.02, 0, 0),
-                     (-0.2, 0.042, 0.022, 0, 0), (-0.18, 0.04, 0.02, 0, 0)], rings=Q(18), seg=Q(20), round_start=0.02, noise=0.04,
-                    noise_scale=60, seed=4)
-        thumb = tube_path([(sx * 0.035, -0.23, 0.0), (sx * 0.05, -0.26, 0.0), (sx * 0.05, -0.285, 0.0)], [0.012, 0.011, 0.008], seg=Q(10))
-        P(PartSpec(f'mitt_string_{side}', f'mitt_{side}', (0, 0, 0), mesh=string, kind='sash'))
-        P(PartSpec(f'mitten_{side}', f'mitt_{side}', (0, 0, 0), mesh=merge([mitt, thumb]), kind='mitten'))
+                     (-0.2, 0.042, 0.022, 0, 0), (-0.18, 0.04, 0.02, 0, 0)], rings=Q(14), seg=Q(16), round_start=0.02, noise=0.04,
+                    noise_scale=60, seed=4 + i)
+        thumb = tube_path([(0.035, -0.23, 0.0), (0.05, -0.26, 0.0), (0.05, -0.285, 0.0)], [0.012, 0.011, 0.008], seg=Q(8))
+        m = merge([mitt, thumb])
+        m.vertices[:, 1] += 0.18
+        m.vertices *= 0.5                                  # детский размер
+        ang = math.atan2(x, z) + rng.uniform(-0.5, 0.5)    # лежит плашмя на юбке
+        ca, sa = math.cos(ang), math.sin(ang)
+        vx, vz = m.vertices[:, 0].copy(), m.vertices[:, 2].copy()
+        m.vertices[:, 0] = vx * ca + vz * sa
+        m.vertices[:, 2] = -vx * sa + vz * ca
+        nx, nz = m.normals[:, 0].copy(), m.normals[:, 2].copy()
+        m.normals[:, 0] = nx * ca + nz * sa
+        m.normals[:, 2] = -nx * sa + nz * ca
+        m.vertices += np.array([ox, -drop, oz])
+        P(PartSpec(f'kid_string_{i}', f'kid_mitt_{i}', (0, 0, 0), mesh=string, kind='sash'))
+        P(PartSpec(f'kid_mitten_{i}', f'kid_mitt_{i}', (0, 0, 0), mesh=m, kind='mitten'))
     # галоши на валенках
     for side in ('R', 'L'):
         P(PartSpec(f'galosh_{side}', f'ankle_{side}', (0, 0, 0), kind='rubber',
@@ -403,18 +426,17 @@ def build_babka(seed=4):
         P(PartSpec(f'snow_shoulder_{side}', 'spine2', (sx * 0.17, 0.315, -0.04), rot=(0, 0, sx * -22),
                    mesh=snowcap(0.075, 0.02, 0.095, 40 + sx), kind='snowpack'))
     P(PartSpec('snow_back', 'spine2', (0, 0.22, -0.235), rot=(-62, 0, 0), mesh=snowcap(0.14, 0.022, 0.1, 52), kind='snowpack'))
-    P(PartSpec('snow_back2', 'spine2', (0, 0.02, -0.29), rot=(-78, 0, 0), mesh=snowcap(0.16, 0.02, 0.08, 53), kind='snowpack'))
 
     def icicle(L, r, seed_):
         return loft([(-L, 0.0015, 0.0015, 0, 0), (-L * 0.55, r * 0.45, r * 0.45, 0, 0), (-0.01, r, r, 0, 0), (0.0, r * 1.2, r * 1.2, 0, 0)],
                      rings=Q(8), seg=Q(8), noise=0.3, noise_scale=60, seed=seed_)
     # по краю платка (сзади и с боков)
-    for i, a in enumerate(np.linspace(math.radians(195), math.radians(345), 13)):
-        L = rng.uniform(0.04, 0.14)
+    for i, a in enumerate(np.linspace(math.radians(160), math.radians(380), 26)):
+        L = rng.uniform(0.06, 0.3)
         P(PartSpec(f'icicle_shawl_{i}', 'spine2', (0.29 * math.cos(a), -0.58, 0.26 * math.sin(a) - 0.01),
                    mesh=icicle(L, rng.uniform(0.005, 0.009), 60 + i), kind='ice'))
     # под подбородком, с края капюшона
-    for i, x in enumerate((-0.05, -0.02, 0.025, 0.055)):
+    for i, x in enumerate((-0.06, -0.045, -0.02, 0.01, 0.03, 0.05, 0.062)):
         P(PartSpec(f'icicle_hood_{i}', 'head', (x, -0.06 - abs(x) * 0.6, 0.06 - abs(x) * 0.5),
-                   mesh=icicle(rng.uniform(0.025, 0.06), 0.004, 70 + i), kind='ice'))
+                   mesh=icicle(rng.uniform(0.04, 0.13), 0.0045, 70 + i), kind='ice'))
     return _finalize(parts)
